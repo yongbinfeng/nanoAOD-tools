@@ -47,7 +47,7 @@ Output     = {pid}.out
 Error      = {pid}.error
 getenv      = True
 environment = "LS_SUBCWD={here}"
-+JobFlavour = "microcentury"
++JobFlavour = "workday"
 queue 1\n
 """.format(
            here=os.environ['PWD'],
