@@ -11,7 +11,7 @@ def prepare_condor_jobs(arglist):
     inputdir = arglist[2]
 
     for ifile in os.listdir(inputdir):
-        res = re.match("myNanoProdMc2016_NANO_10(\d+).root", ifile)
+        res = re.match("myNanoProdMc2016_NANO_([7-9]\d+).root", ifile)
         if res is None:
            continue
         fname = inputdir + "/" + ifile
@@ -47,7 +47,7 @@ Output     = {pid}.out
 Error      = {pid}.error
 getenv      = True
 environment = "LS_SUBCWD={here}"
-+JobFlavour = "espresso"
++JobFlavour = "microcentury"
 queue 1\n
 """.format(
            here=os.environ['PWD'],
@@ -102,7 +102,8 @@ def main():
     outdir = args[0]; args = args[1:]
 
     modules = []
-    for mod, names in options.imports: 
+    defaults_to_import = [('PhysicsTools.NanoAODTools.postprocessing.examples.recoilModule', 'recoilModuleConstr')]
+    for mod, names in options.imports + defaults_to_import: 
         import_module(mod)
         obj = sys.modules[mod]
         selnames = names.split(",")
