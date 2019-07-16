@@ -102,7 +102,10 @@ def main():
     outdir = args[0]; args = args[1:]
 
     modules = []
-    defaults_to_import = [('PhysicsTools.NanoAODTools.postprocessing.examples.recoilModule', 'recoilModuleConstr')]
+    defaults_to_import =[ 
+                            ('PhysicsTools.NanoAODTools.postprocessing.examples.recoilModule', 'recoilModuleConstr'),
+                            ('PhysicsTools.NanoAODTools.postprocessing.examples.genPFMatchingModule', 'genPFMatchingModuleConstr'),
+                        ]
     for mod, names in options.imports + defaults_to_import: 
         import_module(mod)
         obj = sys.modules[mod]

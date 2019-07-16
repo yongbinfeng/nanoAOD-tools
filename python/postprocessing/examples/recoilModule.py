@@ -67,8 +67,8 @@ class recoilProducer(Module):
         """ given input pfcand and vetoCands, decide if the PF cand
             should be vetoed or not. Currently only apply DeltaR cut """
 
-        for ic in xrange(0, len(vetoCands)):
-            if deltaR(pfcand.eta, pfcand.phi, ic.eta, ic.phi) < 0.01:
+        for vc in vetoCands:
+            if deltaR(pfcand.eta, pfcand.phi, vc.eta, vc.phi) < 0.01:
                 return True
         return False
 
@@ -89,7 +89,7 @@ class recoilProducer(Module):
         self.out.fillBranch("phi_W",     phi_W     )
 
         # check if the event has a good muon
-        hasGoodMuon = ( muons[0].pt<20.0 and abs(muons[0].eta)>2.4 and muons[0].Muon_tightId )
+        hasGoodMuon = ( muons[0].pt>20.0 and abs(muons[0].eta)<2.4 and muons[0].tightId )
         self.out.fillBranch("hasGoodMuon",  hasGoodMuon )
         vetoCands = []
         if hasGoodMuon:
