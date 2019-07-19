@@ -103,8 +103,7 @@ class recoilProducer(Module):
         for p in pfCands:
             if self.vetoPF(p, vetoCands ): continue
 
-            plorenz = ROOT.TLorentzVector()
-            plorenz.SetPtEtaPhiM( p.pt, p.eta, p.phi, p.mass )
+            plorenz = p.p4()
             isGoodTk = ( p.charge!=0 and p.fromPV >= 2 )
 
             ulorenzs["puppi"]              += plorenz * p.puppiWeightNoLep
@@ -140,8 +139,7 @@ class recoilProducer(Module):
                 nlep += 1
                 continue
 
-            plorenz = ROOT.TLorentzVector()
-            plorenz.SetPtEtaPhiM( p.pt, p.eta, p.phi, p.mass )
+            plorenz = p.p4()
 
             ugenlorenzs["Gen"]              += plorenz
             ugenlorenzs["Gen_pt500"]        += plorenz * ( p.pt > 0.5 )

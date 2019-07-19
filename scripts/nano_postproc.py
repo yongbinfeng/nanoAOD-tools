@@ -11,7 +11,8 @@ def prepare_condor_jobs(arglist):
     inputdir = arglist[2]
 
     for ifile in os.listdir(inputdir):
-        res = re.match("myNanoProdMc2016_NANO_([7-9]\d+).root", ifile)
+        #res = re.match("myNanoProdMc2016_NANO_([7-9]\d+).root", ifile)
+        res = re.match("myNanoProdMc2016_NANO_(7\d+).root", ifile)
         if res is None:
            continue
         fname = inputdir + "/" + ifile
