@@ -154,7 +154,7 @@ class genPFMatchingProducer(Module):
         outputs["packedGenPart_phoIso1"]   = [ gp.phoIso1   for gp in packedGenParts ]
 
         outputs["PF_toGenN"]    = [ p.toGenN     for p  in pfCands        ]        
-        outputs["PF_toGenrpt"]  = [ p.toGen_sumpt.Pt()/(p.pt+1e-6) for p in pfCands ]
+        outputs["PF_toGenrpt"]  = [ p.pt/(p.toGen_sumpt.Pt()+1e-6) for p in pfCands ]
         outputs["PF_toGendR"]   = [ deltaR(p.eta, p.phi, p.toGen_sumpt.Eta(), p.toGen_sumpt.Phi()) for p in pfCands ]
         #outputs["PF_neuIso1"]              = [ p.neuIso1    for p  in pfCands        ]
         #outputs["PF_neuIso3"]              = [ p.neuIso3    for p  in pfCands        ]
