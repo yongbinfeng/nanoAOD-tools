@@ -40,6 +40,8 @@ class genPFMatchingProducer(Module):
         self.out.branch("PF_toGenN",               "I", lenVar="nPF") # number of gen particles closest to this PF
         self.out.branch("PF_toGenrpt",             "F", lenVar="nPF") # pT_reco/ pT_sum_Gen
         self.out.branch("PF_toGendR",              "F", lenVar="nPF") # delta R between reco and the direction of sum Gen
+        self.out.branch("PF_toGenmindR",           "F", lenVar="nPF") # min delta R between reco PF and the gens that are closest to this PF
+        self.out.branch("PF_toGenmindR_rpt",       "F", lenVar="nPF") # pT_reco / pT_Gen of the above Gen
         #self.out.branch("PF_neuIso1",              "O", lenVar="nPF")
         #self.out.branch("PF_neuIso3",              "O", lenVar="nPF")
         #self.out.branch("PF_neuIso4",              "O", lenVar="nPF")
@@ -90,12 +92,16 @@ class genPFMatchingProducer(Module):
         for gp, p in pairs.iteritems():
             if p is not None:
             # found closest particles
+                dR = deltaR( gp.eta, gp.phi, p.eta, p.phi )
                 gp.toPFIndex = p.index
-                gp.toPFdR = deltaR( gp.eta, gp.phi, p.eta, p.phi )
+                gp.toPFdR = dR
                 gp.toPFrpt = p.pt / ( gp.pt + 1e-6 )
 
                 p.toGenN += 1
                 p.toGen_sumpt += gp.p4()
+                if dR< p.toGen_mindR:
+                    p.toGen_mindR = dR
+                    p.toGen_mindR_rpt = p.pt / ( gp.pt + 1e-6 )
 
     def analyze(self, event):
         """process event, return True (go to next module) or False (fail, go to next event)"""
@@ -110,11 +116,13 @@ class genPFMatchingProducer(Module):
         for p in pfCands:
             p.toGenN = 0
             p.toGen_sumpt = ROOT.TLorentzVector()
+            p.toGen_mindR = 999.0
+            p.toGen_mindR_rpt = -999.0
             #p.neuIso1 = True
             #p.neuIso3 = True
             #p.neuIso4 = True
             p.index = index
-            if p.pt > 0.4 and abs( p.eta ) < 3.1:
+            if p.pt > 0.3 and abs( p.eta ) < 3.1:
                 pfCands_selected.append( p )
             index += 1
 
@@ -153,9 +161,11 @@ class genPFMatchingProducer(Module):
         outputs["packedGenPart_neuIso1"]   = [ gp.neuIso1   for gp in packedGenParts ]
         outputs["packedGenPart_phoIso1"]   = [ gp.phoIso1   for gp in packedGenParts ]
 
-        outputs["PF_toGenN"]    = [ p.toGenN     for p  in pfCands        ]        
-        outputs["PF_toGenrpt"]  = [ p.pt/(p.toGen_sumpt.Pt()+1e-6) for p in pfCands ]
-        outputs["PF_toGendR"]   = [ deltaR(p.eta, p.phi, p.toGen_sumpt.Eta(), p.toGen_sumpt.Phi()) for p in pfCands ]
+        outputs["PF_toGenN"]         = [ p.toGenN                         for p in pfCands ]        
+        outputs["PF_toGenmindR"]     = [ p.toGen_mindR                    for p in pfCands ]
+        outputs["PF_toGenmindR_rpt"] = [ p.toGen_mindR_rpt                for p in pfCands ]
+        outputs["PF_toGenrpt"]       = [ p.pt/(p.toGen_sumpt.Pt()+1e-6)   for p in pfCands ]
+        outputs["PF_toGendR"]        = [ p.p4().DeltaR(p.toGen_sumpt)     for p in pfCands ]
         #outputs["PF_neuIso1"]              = [ p.neuIso1    for p  in pfCands        ]
         #outputs["PF_neuIso3"]              = [ p.neuIso3    for p  in pfCands        ]
         #outputs["PF_neuIso4"]              = [ p.neuIso4    for p  in pfCands        ]
