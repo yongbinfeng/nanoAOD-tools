@@ -78,7 +78,7 @@ class genPFMatchingProducer(Module):
         if gp.charge!=0 and abs(gp.eta)<2.5:
             # charged particle
             ptype = 1
-        if gp.charge==0 and abs(gp.pdgId) not in [12, 14, 16, 22]:
+        elif ( ( gp.charge==0 and abs(gp.pdgId) not in [12, 14, 16, 22] ) or ( gp.charge!=0 and abs(gp.eta)>2.5 ) ):
             # neutral hadrons
             ptype = 2
         if gp.charge==0 and abs(gp.pdgId)==22:
@@ -150,11 +150,11 @@ class genPFMatchingProducer(Module):
         for igp in xrange(len(GenColl)):
             for ip in xrange(len(PFColl)):
                 dR = deltaR( GenColl[igp].eta, GenColl[igp].phi, PFColl[ip].eta, PFColl[ip].phi )
-                # only save dR<0.1 values now, to save time in changing np array values
-                if dR<0.1:
-                    self.AdrGenPF[igp, ip] = dR
-                    if GenColl[igp].ptype == PFColl[ip].ptype:
-                        self.AdrGenPFST[igp, ip] = dR
+                ## only save dR<0.1 values now, to save time in changing np array values
+                #if dR<0.1:
+                self.AdrGenPF[igp, ip] = dR
+                if GenColl[igp].ptype == PFColl[ip].ptype:
+                    self.AdrGenPFST[igp, ip] = dR
 
 
     def mapGenPF(self, GenColl, PFColl):
@@ -271,7 +271,7 @@ class genPFMatchingProducer(Module):
             gp.phoPFIso1 = -999.0
             gp.index = index
             gp.ptype = 0
-            if gp.pt > 0.5 and abs( gp.eta ) < 3.0 and abs( gp.pdgId ) not in [12, 14, 16]:
+            if gp.pt > 0.4 and abs( gp.eta ) < 3.1 and abs( gp.pdgId ) not in [12, 14, 16]:
                 gp.ptype = self.getGenType( gp ) 
                 packedGenParts_selected.append( gp ) 
             index += 1

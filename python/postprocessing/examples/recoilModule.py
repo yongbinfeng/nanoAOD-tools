@@ -8,14 +8,16 @@ from PhysicsTools.NanoAODTools.postprocessing.tools import deltaR
 class recoilProducer(Module):
     """ produce some flags and variables for the truth and reco recoil """
     def __init__(self):
-        self.recoils = ["tk", "tk_pt500", 
+        self.recoils = [
                         "tk_eta2p5", "tk_pt500_eta2p5", 
+                        "tkpho_eta2p5_eta3p0", "tkpho_pt500_eta2p5_eta3p0",
                         "puppi", "puppi_pt500",
                         "puppi_eta2p5",  "puppi_pt500_eta2p5", 
                         "puppi_eta3p0", "puppi_pt500_eta3p0", 
                         "puppi_eta5p0", "puppi_pt500_eta5p0"]
-        self.genrecoils = ["tkGen", "tkGen_pt500", 
+        self.genrecoils = [
                            "tkGen_eta2p5", "tkGen_pt500_eta2p5", 
+                           "tkphoGen_eta2p5_eta3p0", "tkphoGen_pt500_eta2p5_eta3p0",
                            "Gen", "Gen_pt500",
                            "Gen_eta2p5", "Gen_pt500_eta2p5",
                            "Gen_eta3p0", "Gen_pt500_eta3p0",
@@ -104,7 +106,8 @@ class recoilProducer(Module):
             if self.vetoPF(p, vetoCands ): continue
 
             plorenz = p.p4()
-            isGoodTk = ( p.charge!=0 and p.fromPV >= 2 )
+            isGoodTk  = ( p.charge!=0 and p.fromPV >= 2 and abs(p.eta)<2.5 )
+            isGoodPho = ( p.charge==0 and abs(p.pdgId)==22 and abs(p.eta)<3.0 )
 
             ulorenzs["puppi"]              += plorenz * p.puppiWeightNoLep
             ulorenzs["puppi_pt500"]        += plorenz * p.puppiWeightNoLep * ( p.pt> 0.5 )
@@ -115,10 +118,11 @@ class recoilProducer(Module):
             ulorenzs["puppi_eta5p0"]       += plorenz * p.puppiWeightNoLep * ( abs(p.eta) < 5.0 )
             ulorenzs["puppi_pt500_eta5p0"] += plorenz * p.puppiWeightNoLep * ( p.pt> 0.5 ) * ( abs(p.eta) < 5.0 )
 
-            ulorenzs["tk"]                 += plorenz * isGoodTk
-            ulorenzs["tk_pt500"]           += plorenz * isGoodTk * ( p.pt> 0.5 )
-            ulorenzs["tk_eta2p5"]          += plorenz * isGoodTk * ( abs(p.eta) < 2.5 )
-            ulorenzs["tk_pt500_eta2p5"]    += plorenz * isGoodTk * ( p.pt> 0.5 ) * ( abs(p.eta) < 2.5 )
+            ulorenzs["tk_eta2p5"]          += plorenz * isGoodTk 
+            ulorenzs["tk_pt500_eta2p5"]    += plorenz * isGoodTk * ( p.pt> 0.5 ) 
+
+            ulorenzs["tkpho_eta2p5_eta3p0"]  += plorenz * ( isGoodTk or isGoodPho )
+            ulorenzs["tkpho_pt500_eta2p5_eta3p0"] += plorenz * ( isGoodTk or isGoodPho ) * ( p.pt>0.5 )
 
         for uname, ulorenz in ulorenzs.iteritems():
             self.out.fillBranch( "u_%s_pt"  %uname,    ulorenz.Pt()  )
@@ -139,6 +143,9 @@ class recoilProducer(Module):
                 nlep += 1
                 continue
 
+            isGoodGenTk  = ( p.charge!=0 and abs(p.eta)<2.5 )
+            isGoodGenPho = ( p.charge==0 and abs(p.pdgId)==22 and abs(p.eta)<3.0 )
+
             plorenz = p.p4()
 
             ugenlorenzs["Gen"]              += plorenz
@@ -150,10 +157,11 @@ class recoilProducer(Module):
             ugenlorenzs["Gen_eta5p0"]       += plorenz * ( abs(p.eta)<5.0 )
             ugenlorenzs["Gen_pt500_eta5p0"] += plorenz * ( p.pt > 0.5 ) * (abs(p.eta)<5.0 )
 
-            ugenlorenzs["tkGen"]              += plorenz * ( p.charge!=0 )
-            ugenlorenzs["tkGen_pt500"]        += plorenz * ( p.charge!=0 ) * ( p.pt > 0.5 )
-            ugenlorenzs["tkGen_eta2p5"]       += plorenz * ( p.charge!=0 ) * ( abs(p.eta)<2.5 )
-            ugenlorenzs["tkGen_pt500_eta2p5"] += plorenz * ( p.charge!=0 ) * ( p.pt > 0.5 ) * (abs(p.eta)<2.5 )
+            ugenlorenzs["tkGen_eta2p5"]       += plorenz * isGoodGenTk
+            ugenlorenzs["tkGen_pt500_eta2p5"] += plorenz * isGoodGenTk * ( p.pt>0.5 )
+
+            ugenlorenzs["tkphoGen_eta2p5_eta3p0"] += plorenz * ( isGoodGenTk or isGoodGenPho )
+            ugenlorenzs["tkphoGen_pt500_eta2p5_eta3p0"] += plorenz * (isGoodGenTk or isGoodGenPho ) * ( p.pt>0.5 )
 
         for ugenname, ugenlorenz in ugenlorenzs.iteritems():
             self.out.fillBranch( "u_%s_pt"  %ugenname,    ugenlorenz.Pt()  )
