@@ -65,12 +65,13 @@ class recoilProducer(Module):
 
         return (foundGenW, pT_W, eta_W, phi_W)
 
-    def vetoPF(self, pfcand, vetoCands):
-        """ given input pfcand and vetoCands, decide if the PF cand
+
+    def vetoCandidate(self, pcand, vetoCands):
+        """ given input pcand and vetoCands, decide if the pcand
             should be vetoed or not. Currently only apply DeltaR cut """
 
         for vc in vetoCands:
-            if deltaR(pfcand.eta, pfcand.phi, vc.eta, vc.phi) < 0.01:
+            if deltaR(pcand.eta, pcand.phi, vc.eta, vc.phi) < 0.01:
                 return True
         return False
 
@@ -103,7 +104,7 @@ class recoilProducer(Module):
             ulorenzs[u] = ROOT.TLorentzVector()
 
         for p in pfCands:
-            if self.vetoPF(p, vetoCands ): continue
+            if self.vetoCandidate(p, vetoCands ): continue
 
             plorenz = p.p4()
             isGoodTk  = ( p.charge!=0 and p.fromPV >= 2 and abs(p.eta)<2.5 )
@@ -131,37 +132,44 @@ class recoilProducer(Module):
             self.out.fillBranch( "u_%s_mass"%uname,    ulorenz.M()   )
 
         # calculate the Gen recoils
+        vetoGens = []
+        for gp in packedGenParts:
+            if abs(gp.pdgId) in [11, 13] and gp.pt > 20.0 and abs(gp.eta)<2.4 :
+                vetoGens.append( gp )
+                break
+
         ugenlorenzs = {}
         for ugen in self.genrecoils:
             ugenlorenzs[ugen] = ROOT.TLorentzVector()
 
         nlep = 0
-        for p in packedGenParts:
-            if abs(p.pdgId) in [12, 14, 16]: continue # veto neutrino
-            if abs(p.pdgId) in [11, 13] and nlep < 1:
+        for gp in packedGenParts:
+            if abs(gp.pdgId) in [12, 14, 16]: continue # veto neutrino
+            if abs(gp.pdgId) in [11, 13] and nlep < 1:
                 # veto the first lepton
                 nlep += 1
                 continue
+            #if abs(gp.pdgId)==22 and self.vetoCandidate(gp, vetoGens): continue # veto photons close to gen lepton
 
-            isGoodGenTk  = ( p.charge!=0 and abs(p.eta)<2.5 )
-            isGoodGenPho = ( p.charge==0 and abs(p.pdgId)==22 and abs(p.eta)<3.0 )
+            isGoodGenTk  = ( gp.charge!=0 and abs(gp.eta)<2.5 )
+            isGoodGenPho = ( gp.charge==0 and abs(gp.pdgId)==22 and abs(gp.eta)<3.0 )
 
-            plorenz = p.p4()
+            plorenz = gp.p4()
 
             ugenlorenzs["Gen"]              += plorenz
-            ugenlorenzs["Gen_pt500"]        += plorenz * ( p.pt > 0.5 )
-            ugenlorenzs["Gen_eta2p5"]       += plorenz * ( abs(p.eta)<2.5 )
-            ugenlorenzs["Gen_pt500_eta2p5"] += plorenz * ( p.pt > 0.5 ) * (abs(p.eta)<2.5 )
-            ugenlorenzs["Gen_eta3p0"]       += plorenz * ( abs(p.eta)<3.0 )
-            ugenlorenzs["Gen_pt500_eta3p0"] += plorenz * ( p.pt > 0.5 ) * (abs(p.eta)<3.0 )
-            ugenlorenzs["Gen_eta5p0"]       += plorenz * ( abs(p.eta)<5.0 )
-            ugenlorenzs["Gen_pt500_eta5p0"] += plorenz * ( p.pt > 0.5 ) * (abs(p.eta)<5.0 )
+            ugenlorenzs["Gen_pt500"]        += plorenz * ( gp.pt > 0.5 )
+            ugenlorenzs["Gen_eta2p5"]       += plorenz * ( abs(gp.eta)<2.5 )
+            ugenlorenzs["Gen_pt500_eta2p5"] += plorenz * ( gp.pt > 0.5 ) * (abs(gp.eta)<2.5 )
+            ugenlorenzs["Gen_eta3p0"]       += plorenz * ( abs(gp.eta)<3.0 )
+            ugenlorenzs["Gen_pt500_eta3p0"] += plorenz * ( gp.pt > 0.5 ) * (abs(gp.eta)<3.0 )
+            ugenlorenzs["Gen_eta5p0"]       += plorenz * ( abs(gp.eta)<5.0 )
+            ugenlorenzs["Gen_pt500_eta5p0"] += plorenz * ( gp.pt > 0.5 ) * (abs(gp.eta)<5.0 )
 
             ugenlorenzs["tkGen_eta2p5"]       += plorenz * isGoodGenTk
-            ugenlorenzs["tkGen_pt500_eta2p5"] += plorenz * isGoodGenTk * ( p.pt>0.5 )
+            ugenlorenzs["tkGen_pt500_eta2p5"] += plorenz * isGoodGenTk * ( gp.pt>0.5 )
 
             ugenlorenzs["tkphoGen_eta2p5_eta3p0"] += plorenz * ( isGoodGenTk or isGoodGenPho )
-            ugenlorenzs["tkphoGen_pt500_eta2p5_eta3p0"] += plorenz * (isGoodGenTk or isGoodGenPho ) * ( p.pt>0.5 )
+            ugenlorenzs["tkphoGen_pt500_eta2p5_eta3p0"] += plorenz * (isGoodGenTk or isGoodGenPho ) * ( gp.pt>0.5 )
 
         for ugenname, ugenlorenz in ugenlorenzs.iteritems():
             self.out.fillBranch( "u_%s_pt"  %ugenname,    ugenlorenz.Pt()  )
