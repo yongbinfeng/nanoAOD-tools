@@ -17,7 +17,7 @@ class HCALSegmentation(object):
                             0.087, 0.174, 0.261, 0.348, 0.435, 0.522, 0.609, 
                             0.696, 0.783, 0.870, 0.957, 1.044, 1.131, 1.218, 
                             1.305, 1.392, 1.479, 1.566, 1.653, 1.740, 1.830, 
-                            1.930, 2.043, 2.172, 2.322, 2.500, 2.650, 3.000
+                            1.930, 2.043, 2.172, 2.322, 2.500, 2.650, 3.00001
                           ]
         self.etaSeg = [ 0. ]
         for eta in self.etaPosSeg:
@@ -31,7 +31,7 @@ class HCALSegmentation(object):
         self.phiHE = np.pi/18.0
 
     def getEtaIndex(self, eta):
-        assert eta>-3.0 and eta<3.0, "eta %f goes out of the range"%eta
+        assert eta>-3.00001 and eta<3.00001, "eta %f goes out of the range"%eta
         return np.searchsorted( self.etaSeg, eta )-1
 
     # return the middle of the eta cell given the index
@@ -40,6 +40,10 @@ class HCALSegmentation(object):
     
     # index of phi depends on the index of eta
     def getPhiIndex(self, eta, phi):
+        if phi > np.pi:
+            phi = phi - 2*np.pi
+        elif phi< -np.pi:
+            phi = phi + 2*np.pi
         assert phi >= -np.pi and phi<= np.pi, "phi %f goes out of the range"%phi
         cell = self.phiHB if abs(eta)<self.etaCut else self.phiHE
         return int((phi + np.pi )/cell)
@@ -197,8 +201,6 @@ class neuToNVPProducer(Module):
 
         # build the map between PF and Gen
         NVP_PF_PVFraction, NVP_Gen_recoFraction = self.mapPFGen( neuPixels_PF, neuPixels_Gen )
-        print "PF", len(NVP_PF_PVFraction), len(NVP_PF_pt)
-        print "Gen", len(NVP_Gen_recoFraction), len(NVP_Gen_pt)
         self.out.fillBranch("NVP_PF_PVFraction",    NVP_PF_PVFraction   )
         self.out.fillBranch("NVP_Gen_recoFraction", NVP_Gen_recoFraction )
 
