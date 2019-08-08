@@ -106,6 +106,7 @@ def main():
     defaults_to_import =[ 
                             ('PhysicsTools.NanoAODTools.postprocessing.examples.recoilModule', 'recoilModuleConstr'),
                             ('PhysicsTools.NanoAODTools.postprocessing.examples.genPFMatchingModule', 'genPFMatchingModuleConstr'),
+                            ('PhysicsTools.NanoAODTools.postprocessing.examples.neuToNVPModule', 'neuToNVPModuleConstr'),
                         ]
     for mod, names in options.imports + defaults_to_import: 
         import_module(mod)
