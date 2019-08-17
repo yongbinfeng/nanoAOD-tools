@@ -19,7 +19,7 @@ def prepare_condor_jobs(arglist):
         short = res.group(1)
 
         # prepare the log directory
-        logdir = os.environ['PWD']+'/'+ "logs_v3"
+        logdir = os.environ['PWD']+'/'+ "logs_v5"
         logdir = logdir.rstrip("/")
         if not os.path.exists(logdir):
             os.system("mkdir -p "+logdir)

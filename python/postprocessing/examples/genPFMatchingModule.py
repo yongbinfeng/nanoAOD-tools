@@ -280,8 +280,8 @@ class genPFMatchingProducer(Module):
         self.makeDRMapGenPF( packedGenParts_selected, pfCands_selected )
 
         # calculate isolations for selected packedGenParts
-        self.getIsolations( packedGenParts_selected )
-        self.getRecoIsolationForGen( packedGenParts_selected, pfCands_selected )
+        #self.getIsolations( packedGenParts_selected )
+        #self.getRecoIsolationForGen( packedGenParts_selected, pfCands_selected )
 
         ## match gen with the closest PF candidates
         self.mapGenPF( packedGenParts_selected, pfCands_selected )
