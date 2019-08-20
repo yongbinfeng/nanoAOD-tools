@@ -115,35 +115,41 @@ class neuToNVPProducer(Module):
             self.out.branch("NVP_%s_phi"%itype, "F", lenVar="nNVP_%s"%itype)
             self.out.branch("NVP_%s_photonFraction"%itype, "F", lenVar="nNVP_%s"%itype)
             self.out.branch("NVP_%s_isMerged"%itype, "O", lenVar="nNVP_%s"%itype)
+        self.out.branch("NVP_PF_pt_puppi",   "F", lenVar="nNVP_PF")
         self.out.branch("NVP_PF_toGenIndex", "I", lenVar="nNVP_PF")
         self.out.branch("NVP_Gen_toPFIndex", "I", lenVar="nNVP_Gen")
 
     def endFile(self, inputFile, outputFile, inputTree, wrappedOutputTree):
         pass
 
-    def Neutrals2Pixels(self, NeuColl):
+    def Neutrals2Pixels(self, NeuColl, isPF = False):
         # 56 cells between eta[-3.0, 3.0]
         # 72/36 cells in phi HB/HE
         # save the total energy of different cells
         neuPixels = np.zeros((56, 72))
         phoPixels = np.zeros((56, 72))
+        neuPuppiPixels = np.zeros((56, 72))
         for p in NeuColl:
             ieta, iphi = self.segment.getIEtaIPhi( p.eta, p.phi )
             ptot = p.pt * np.cosh(p.eta)
-            neuPixels[ieta][iphi] += np.hypot( ptot, p.mass )
+            energy = np.hypot( ptot, p.mass )
+            neuPixels[ieta][iphi] += energy
             phoPixels[ieta][iphi] += ptot * (abs(p.pdgId)==22) 
+            if isPF:
+                neuPuppiPixels[ieta][iphi] += energy * p.puppiWeightNoLep 
         
-        return neuPixels, phoPixels
+        return neuPixels, phoPixels, neuPuppiPixels
 
     def MergePixels(self):
         """
-        Merge the pixels for Gen and PF if one is PF > Gen and the other is PF < Gen
+        Merge the pixels for Gen and PF if one is Gen > 1.25 * PF, and
+        if merging the connected cell could make the merged one smaller
         """
         for ieta, iphi in zip(*np.where(self.neuPixels_Gen>0)):
 
             E_Gen = self.neuPixels_Gen[ieta, iphi]
-            if E_Gen/np.cosh(self.segment.getEta(ieta)) < 1.0:
-                # only merge pT > 1.0 GeV cells
+            if E_Gen/np.cosh(self.segment.getEta(ieta)) < 0.5:
+                # only merge pT > 0.5 GeV cells
                 continue
             if self.neuPixels_PF[ieta, iphi] > 0.8 * E_Gen:
                 continue 
@@ -151,9 +157,10 @@ class neuToNVPProducer(Module):
             r_best = 1e8
             ietaiphim = None
             for ietac, iphic in self.segment.getConnectedIEtaIPhis(ieta, iphi):
-                r_best = min(abs(E_Gen/(self.neuPixels_PF[ieta, iphi]+1e-8)-1.0), abs(self.neuPixels_Gen[ietac, iphic]/(self.neuPixels_PF[ietac, iphic]+1e-8)-1.0), r_best)
-                r_merged = abs((E_Gen+self.neuPixels_Gen[ietac, iphic])/(self.neuPixels_PF[ieta, iphi]+self.neuPixels_PF[ietac,iphic]+1e-8)-1.0)
-                if r_best> r_merged:
+                r_merged = (E_Gen+self.neuPixels_Gen[ietac, iphic])/(self.neuPixels_PF[ieta, iphi]+self.neuPixels_PF[ietac,iphic]+1e-8)
+                r_org  = E_Gen / ( self.neuPixels_PF[ieta, iphi] + 1e-8)
+                r_orgc = self.neuPixels_Gen[ietac, iphic] / ( self.neuPixels_PF[ietac,iphic]+1e-8 )
+                if r_merged < r_org and r_merged > r_orgc and abs(r_merged-1.0) < abs(r_best-1.0):
                     r_best = r_merged
                     ietaiphim = (ietac, iphic)
 
@@ -161,15 +168,16 @@ class neuToNVPProducer(Module):
                 ietam = ietaiphim[0]
                 iphim = ietaiphim[1]
 
-                E_Gen_merged        = E_Gen                          + self.neuPixels_Gen[ietam, iphim]
-                E_pho_Gen_merged    = self.phoPixels_Gen[ieta, iphi] + self.phoPixels_Gen[ietam, iphim]
-                E_PF_merged         = self.neuPixels_PF [ieta, iphi] + self.neuPixels_PF [ietam, iphim]
-                E_pho_PF_merged     = self.phoPixels_PF [ieta, iphi] + self.phoPixels_PF [ietam, iphim]
+                E_Gen_merged        = E_Gen                              + self.neuPixels_Gen[ietam, iphim]
+                E_pho_Gen_merged    = self.phoPixels_Gen[ieta, iphi]     + self.phoPixels_Gen[ietam, iphim]
+                E_PF_merged         = self.neuPixels_PF [ieta, iphi]     + self.neuPixels_PF [ietam, iphim]
+                E_pho_PF_merged     = self.phoPixels_PF [ieta, iphi]     + self.phoPixels_PF [ietam, iphim]
+                E_puppiPF_merged    = self.neuPuppiPixels_PF[ieta, iphi] + self.neuPuppiPixels_PF[ietam, iphim]
                 eta_merged = self.segment.getAvgEta(ieta, ietam)
                 phi_merged = self.segment.getAvgPhi(ieta, iphi, ietam, iphim)
 
-                self.neuPixels_Gen_merged.append((E_Gen_merged, E_pho_Gen_merged, eta_merged, phi_merged))
-                self.neuPixels_PF_merged .append((E_PF_merged,  E_pho_PF_merged,  eta_merged, phi_merged))
+                self.neuPixels_Gen_merged.append((E_Gen_merged, E_pho_Gen_merged, E_Gen_merged, eta_merged, phi_merged))
+                self.neuPixels_PF_merged .append((E_PF_merged,  E_pho_PF_merged,  E_puppiPF_merged, eta_merged, phi_merged))
 
                 self.neuPixels_Gen[ieta,  iphi ]= 0
                 self.neuPixels_Gen[ietam, iphim]=0
@@ -177,7 +185,7 @@ class neuToNVPProducer(Module):
                 self.neuPixels_PF[ietam, iphim]=0
 
 
-    def Pixels2NVPs(self, neuPixels, phoPixels, neuPixels_merged = []):
+    def Pixels2NVPs(self, neuPixels, phoPixels, neuPuppiPixels, neuPixels_merged = []):
         """ 
         convert the energy deposit in cells to neutral 'virtual particles' 
         """
@@ -185,26 +193,30 @@ class neuToNVPProducer(Module):
         NVP_eta      = []
         NVP_phi      = []
         NVP_photonFraction  = []
+        NVP_pt_puppi = []
         NVP_isMerged = []
         for ieta, iphi in zip(*np.where(neuPixels>0)):
             eta, phi = self.segment.getEtaPhi( ieta, iphi )
             pt = neuPixels[ieta, iphi] / np.cosh(eta)
             phofrac = phoPixels[ieta, iphi] / (neuPixels[ieta, iphi] + 1e-8)
+            pt_puppi = neuPuppiPixels[ieta, iphi] / np.cosh(eta)
 
             NVP_pt .append( pt  )
             NVP_eta.append( eta )
             NVP_phi.append( phi )
             NVP_photonFraction.append( phofrac ) 
+            NVP_pt_puppi.append( pt_puppi )
             NVP_isMerged.append( 0 )
         
-        for E, Epho, eta, phi in neuPixels_merged:
+        for E, Epho, Epuppi, eta, phi in neuPixels_merged:
             NVP_pt .append( E/np.cosh(eta) )
             NVP_eta.append( eta )
             NVP_phi.append( phi )
             NVP_photonFraction.append( Epho/(E+1e-8) )
+            NVP_pt_puppi.append( Epuppi/np.cosh(eta) )
             NVP_isMerged.append( 1 )
 
-        return NVP_pt, NVP_eta, NVP_phi, NVP_photonFraction, NVP_isMerged
+        return NVP_pt, NVP_eta, NVP_phi, NVP_photonFraction, NVP_pt_puppi, NVP_isMerged
 
     def linkPFGen(self):
         """
@@ -266,7 +278,7 @@ class neuToNVPProducer(Module):
             if self.vetoCandidate(p, vetoCands ): continue
             neuPFCands.append( p )
 
-        self.neuPixels_PF, self.phoPixels_PF = self.Neutrals2Pixels( neuPFCands )
+        self.neuPixels_PF, self.phoPixels_PF, self.neuPuppiPixels_PF = self.Neutrals2Pixels( neuPFCands, isPF = True )
 
         # Gen
         vetoGens = []
@@ -283,21 +295,24 @@ class neuToNVPProducer(Module):
             if abs(gp.pdgId)==22 and self.vetoCandidate(gp, vetoGens): continue
             neuGenCands.append( gp )
 
-        self.neuPixels_Gen, self.phoPixels_Gen = self.Neutrals2Pixels( neuGenCands )
+        # neuPuppiPixels_Gen is placeholder, no meaning.
+        # just to make the format the same as the PF case
+        self.neuPixels_Gen, self.phoPixels_Gen, self.neuPuppiPixels_Gen = self.Neutrals2Pixels( neuGenCands )
 
         self.neuPixels_Gen_merged = []
         self.neuPixels_PF_merged  = []
 
         self.MergePixels()
 
-        NVP_PF_pt, NVP_PF_eta, NVP_PF_phi, NVP_PF_photonFraction, NVP_PF_isMerged = self.Pixels2NVPs( self.neuPixels_PF, self.phoPixels_PF, self.neuPixels_PF_merged)
-        NVP_Gen_pt, NVP_Gen_eta, NVP_Gen_phi, NVP_Gen_photonFraction, NVP_Gen_isMerged = self.Pixels2NVPs( self.neuPixels_Gen, self.phoPixels_Gen, self.neuPixels_Gen_merged)
+        NVP_PF_pt, NVP_PF_eta, NVP_PF_phi, NVP_PF_photonFraction, NVP_PF_pt_puppi, NVP_PF_isMerged = self.Pixels2NVPs( self.neuPixels_PF, self.phoPixels_PF, self.neuPuppiPixels_PF, self.neuPixels_PF_merged)
+        NVP_Gen_pt, NVP_Gen_eta, NVP_Gen_phi, NVP_Gen_photonFraction, NVP_Gen_pt_puppi, NVP_Gen_isMerged = self.Pixels2NVPs( self.neuPixels_Gen, self.phoPixels_Gen, self.neuPuppiPixels_Gen, self.neuPixels_Gen_merged)
 
         self.out.fillBranch("nNVP_PF",    len(NVP_PF_pt))
         self.out.fillBranch("NVP_PF_pt",  NVP_PF_pt )
         self.out.fillBranch("NVP_PF_eta", NVP_PF_eta)
         self.out.fillBranch("NVP_PF_phi", NVP_PF_phi)
         self.out.fillBranch("NVP_PF_photonFraction", NVP_PF_photonFraction)
+        self.out.fillBranch("NVP_PF_pt_puppi", NVP_PF_pt_puppi)
         self.out.fillBranch("NVP_PF_isMerged", NVP_PF_isMerged)
 
         self.out.fillBranch("nNVP_Gen",    len(NVP_Gen_pt))
