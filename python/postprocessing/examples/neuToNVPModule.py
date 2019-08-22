@@ -7,6 +7,11 @@ from PhysicsTools.NanoAODTools.postprocessing.tools import deltaR,matchObjectCol
 
 import numpy as np
 
+"""
+neuToNVPProducer has to be run after the genPartMatching,
+because it has used Gen and PF particle types
+"""
+
 class HCALSegmentation(object):
     """
     document the hcal segment information
@@ -17,7 +22,8 @@ class HCALSegmentation(object):
                             0.087, 0.174, 0.261, 0.348, 0.435, 0.522, 0.609, 
                             0.696, 0.783, 0.870, 0.957, 1.044, 1.131, 1.218, 
                             1.305, 1.392, 1.479, 1.566, 1.653, 1.740, 1.830, 
-                            1.930, 2.043, 2.172, 2.322, 2.500, 2.650, 3.00001
+                            1.930, 2.043, 2.172, 2.322, 2.500, 2.650, 2.868,
+                            3.00001
                           ]
         self.etaSeg = [ 0. ]
         for eta in self.etaPosSeg:
@@ -30,16 +36,23 @@ class HCALSegmentation(object):
         self.nPhiHB = 72
         self.nPhiHE = 36
 
+    def getNEta(self):
+        # return the number of eta towers
+        return len(self.etaSeg)-1
+
+    def getNPhi(self):
+        return max(self.nPhiHB, self.nPhiHE)
+
     def getIEta(self, eta):
         assert eta>-3.00001 and eta<3.00001, "eta %f goes out of the range"%eta
         return np.searchsorted( self.etaSeg, eta )-1
 
-    # return the middle of the eta cell given the index
     def getEta(self, ieta):
+        # return the middle of the eta cell given the index
         return ( self.etaSeg[ieta] + self.etaSeg[ieta+1] )/2.0
     
-    # index of phi depends on the index of eta
     def getIPhi(self, eta, phi):
+        # index of phi depends on the index of eta
         if phi >= np.pi:
             phi = phi - 2*np.pi
         elif phi< -np.pi:
@@ -60,23 +73,37 @@ class HCALSegmentation(object):
     def getEtaPhi(self, ieta, iphi):
         return self.getEta(ieta), self.getPhi(ieta, iphi)
 
-    def getConnectedIEtaIPhis(self, ieta, iphi):
-        # return the ieta, iphi of the cells connected the to the (ieta, iphi) cell
-        ietaiphicands = [(ieta-1, iphi), (ieta+1, iphi), (ieta, iphi-1), (ieta, iphi+1)]
+    def formatIEtaIPhi(self, ietaiphicands):
+        # given ieta, iphi, check if it makes sense:
+        # e.g., ieta > nEtas, 
+        # and use the periodic property to regulate iphi in [0, 2*nPhi)
         ietaiphis = []
         for ieta, iphi in ietaiphicands:
-            if ieta < 0 or ieta >= len(self.etaSeg)-1:
+            if ieta<0 or ieta >= self.getNEta():
                 continue
-
             eta = self.getEta(ieta)
             nPhi = self.nPhiHB if abs(eta)<self.etaCut else self.nPhiHE
             if iphi<0:
                 iphi = iphi + nPhi
             elif iphi>=nPhi:
                 iphi = iphi - nPhi
-            ietaiphis.append( (ieta, iphi) )
+            ietaiphis.append((ieta, iphi))
 
         return ietaiphis
+
+    def getConnectedIEtaIPhis(self, ieta, iphi):
+        # return the ieta, iphi of the cells connected the to the (ieta, iphi) cell
+        ietaiphicands = [(ieta-1, iphi), (ieta+1, iphi), (ieta, iphi-1), (ieta, iphi+1)]
+        return self.formatIEtaIPhi( ietaiphicands )
+
+    def getSurroundingIEtaIPhis(self, ieta, iphi):
+        # the connected ieta, iphis + the 4 at the coner
+        ietaiphicands = [(ieta-1, iphi-1), (ieta-1, iphi), (ieta-1, iphi+1),
+                         (ieta,   iphi-1),                 (ieta,   iphi+1),
+                         (ieta+1, iphi-1), (ieta+1, iphi), (ieta+1, iphi+1),
+                         ]
+        return self.formatIEtaIPhi( ietaiphicands )
+        
 
     def getAvgEta(self, ieta1, ieta2):
         # return the average eta of ieta1 and ieta2
@@ -93,11 +120,56 @@ class HCALSegmentation(object):
         else:
             return (avg-np.pi)
 
+class HCALTower(object):
+    """
+    A small struct to save the pt, eta, phi, nparticles,
+    and puppiEnergy (puppiWeight * total energy) information, 
+    from the particles in the tower region
+    """
+    def __init__(self, ieta, iphi, pt, eta, phi, mass, pindex, photonFraction = 0., puppiWeight=1.0, isMerged = False):
+        # ieta, iphi is for the HCAL
+        # pt, eta, phi, mass, photonFraction, puppiWeight is from the neutral particle in this tower
+        self.ieta = ieta
+        self.iphi = iphi
+        self.segment = HCALSegmentation()
+        self.eta, self.phi = self.segment.getEtaPhi(ieta, iphi)
+
+        self.energy = np.hypot( pt * np.cosh(eta), mass ) 
+        self.photonEnergy = photonFraction * self.energy
+        self.puppiEnergy = puppiWeight * self.energy
+
+        self.nPart = 1
+        self.pIndices = [ pindex ]
+        self.index = 0
+        self.isMerged = False
+
+    def __add__(self, other):
+        assert self.ieta==other.ieta or self.iphi==other.iphi, "HCAL Towers with different eta and phis can not be added!"
+        self.energy += other.energy
+        self.photonEnergy += other.photonEnergy
+        self.puppiEnergy += other.puppiEnergy
+        self.nPart += other.nPart
+        self.pIndices += other.pIndices
+        return self
+
+    def pt(self):
+        return self.energy / np.cosh(self.eta)
+
+    def photonFraction(self):
+        return self.photonEnergy / (self.energy + 1e-8)
+
+    def puppiWeight(self):
+        return self.puppiEnergy / ( self.energy + 1e-8)
+
+    def firstPIndex(self):
+        # return the index of the fist particle in this tower
+        return self.pIndices[0]
+
 
 class neuToNVPProducer(Module):
     """ 
-    convert the neutral particles ( neutral hadrons and photons ) into pixels.
-    Each pixel will be treated as a 'virtual' particle in the training later
+    convert the neutral particles ( neutral hadrons and photons ) into towers.
+    Each tower will be treated as a 'virtual' particle in the training later
     """
     def __init__(self):
         self.segment = HCALSegmentation()
@@ -114,52 +186,66 @@ class neuToNVPProducer(Module):
             self.out.branch("NVP_%s_eta"%itype, "F", lenVar="nNVP_%s"%itype)
             self.out.branch("NVP_%s_phi"%itype, "F", lenVar="nNVP_%s"%itype)
             self.out.branch("NVP_%s_photonFraction"%itype, "F", lenVar="nNVP_%s"%itype)
+            self.out.branch("NVP_%s_nPart"%itype,    "I", lenVar="nNVP_%s"%itype)
             self.out.branch("NVP_%s_isMerged"%itype, "O", lenVar="nNVP_%s"%itype)
-        self.out.branch("NVP_PF_pt_puppi",   "F", lenVar="nNVP_PF")
+            self.out.branch("NVP_%s_firstPIndex"%itype, "I", lenVar="nNVP_%s"%itype)
+        self.out.branch("NVP_PF_puppiWeightNoLep",   "F", lenVar="nNVP_PF")
         self.out.branch("NVP_PF_toGenIndex", "I", lenVar="nNVP_PF")
         self.out.branch("NVP_Gen_toPFIndex", "I", lenVar="nNVP_Gen")
+        self.out.branch("packedGenPart_TowerIndex", "I", lenVar="npackedGenPart")
+        self.out.branch("PF_TowerIndex",            "I", lenVar="nPF")
 
     def endFile(self, inputFile, outputFile, inputTree, wrappedOutputTree):
         pass
 
-    def Neutrals2Pixels(self, NeuColl, isPF = False):
-        # 56 cells between eta[-3.0, 3.0]
+    def Neutrals2Towers(self, NeuColl, isPF = False):
+        # 58 cells between eta[-3.0, 3.0]
         # 72/36 cells in phi HB/HE
-        # save the total energy of different cells
-        neuPixels = np.zeros((56, 72))
-        phoPixels = np.zeros((56, 72))
-        neuPuppiPixels = np.zeros((56, 72))
+        # save the tower object
+        neuTowers = np.ndarray((self.segment.getNEta(), self.segment.getNPhi()), dtype=np.object)
         for p in NeuColl:
             ieta, iphi = self.segment.getIEtaIPhi( p.eta, p.phi )
-            ptot = p.pt * np.cosh(p.eta)
-            energy = np.hypot( ptot, p.mass )
-            neuPixels[ieta][iphi] += energy
-            phoPixels[ieta][iphi] += ptot * (abs(p.pdgId)==22) 
-            if isPF:
-                neuPuppiPixels[ieta][iphi] += energy * p.puppiWeightNoLep 
-        
-        return neuPixels, phoPixels, neuPuppiPixels
+            puppiWeight = p.puppiWeightNoLep if isPF else 1.0
+            ptower = HCALTower( ieta, iphi, p.pt, p.eta, p.phi, p.mass, p.index, (abs(p.pdgId)==22), puppiWeight )
+            if neuTowers[ieta, iphi]==None:
+                neuTowers[ieta, iphi] = ptower
+            else:
+                neuTowers[ieta, iphi] += ptower
 
-    def MergePixels(self):
+        # index the tower based on ieta, iphi
+        index = 0
+        for ieta, iphi in zip(*np.where(neuTowers[:,:])):
+            tower = neuTowers[ieta, iphi]
+            tower.index = index
+            for ip in tower.pIndices:
+                if isPF:
+                    self.pfCands[ip].TIndex = index
+                else:
+                    self.packedGenParts[ip].TIndex = index
+            index += 1
+
+        return neuTowers
+
+    def MergeTowers(self):
         """
-        Merge the pixels for Gen and PF if one is Gen > 1.25 * PF, and
+        Merge the towers for Gen and PF if one is Gen > 1.25 * PF, and
         if merging the connected cell could make the merged one smaller
         """
-        for ieta, iphi in zip(*np.where(self.neuPixels_Gen>0)):
+        for ieta, iphi in zip(*np.where(self.neuTowers_Gen[:,:,0]>0)):
 
-            E_Gen = self.neuPixels_Gen[ieta, iphi]
+            E_Gen = self.neuTowers_Gen[ieta, iphi, 0]
             if E_Gen/np.cosh(self.segment.getEta(ieta)) < 0.5:
                 # only merge pT > 0.5 GeV cells
                 continue
-            if self.neuPixels_PF[ieta, iphi] > 0.8 * E_Gen:
+            if self.neuTowers_PF[ieta, iphi, 0] > 0.8 * E_Gen:
                 continue 
 
             r_best = 1e8
             ietaiphim = None
             for ietac, iphic in self.segment.getConnectedIEtaIPhis(ieta, iphi):
-                r_merged = (E_Gen+self.neuPixels_Gen[ietac, iphic])/(self.neuPixels_PF[ieta, iphi]+self.neuPixels_PF[ietac,iphic]+1e-8)
-                r_org  = E_Gen / ( self.neuPixels_PF[ieta, iphi] + 1e-8)
-                r_orgc = self.neuPixels_Gen[ietac, iphic] / ( self.neuPixels_PF[ietac,iphic]+1e-8 )
+                r_merged = (E_Gen+self.neuTowers_Gen[ietac, iphic, 0])/(self.neuTowers_PF[ieta, iphi, 0]+self.neuTowers_PF[ietac,iphic,0]+1e-8)
+                r_org  = E_Gen / ( self.neuTowers_PF[ieta, iphi, 0] + 1e-8)
+                r_orgc = self.neuTowers_Gen[ietac, iphic, 0] / ( self.neuTowers_PF[ietac,iphic,0]+1e-8 )
                 if r_merged < r_org and r_merged > r_orgc and abs(r_merged-1.0) < abs(r_best-1.0):
                     r_best = r_merged
                     ietaiphim = (ietac, iphic)
@@ -168,24 +254,23 @@ class neuToNVPProducer(Module):
                 ietam = ietaiphim[0]
                 iphim = ietaiphim[1]
 
-                E_Gen_merged        = E_Gen                              + self.neuPixels_Gen[ietam, iphim]
-                E_pho_Gen_merged    = self.phoPixels_Gen[ieta, iphi]     + self.phoPixels_Gen[ietam, iphim]
-                E_PF_merged         = self.neuPixels_PF [ieta, iphi]     + self.neuPixels_PF [ietam, iphim]
-                E_pho_PF_merged     = self.phoPixels_PF [ieta, iphi]     + self.phoPixels_PF [ietam, iphim]
-                E_puppiPF_merged    = self.neuPuppiPixels_PF[ieta, iphi] + self.neuPuppiPixels_PF[ietam, iphim]
+                neuGen_merged = self.neuTowers_Gen[ieta, iphi] + self.neuTowers_Gen[ietam, iphim]
+                neuPF_merged  = self.neuTowers_PF [ieta, iphi] + self.neuTowers_PF [ietam, iphim]
                 eta_merged = self.segment.getAvgEta(ieta, ietam)
                 phi_merged = self.segment.getAvgPhi(ieta, iphi, ietam, iphim)
 
-                self.neuPixels_Gen_merged.append((E_Gen_merged, E_pho_Gen_merged, E_Gen_merged, eta_merged, phi_merged))
-                self.neuPixels_PF_merged .append((E_PF_merged,  E_pho_PF_merged,  E_puppiPF_merged, eta_merged, phi_merged))
-
-                self.neuPixels_Gen[ieta,  iphi ]= 0
-                self.neuPixels_Gen[ietam, iphim]=0
-                self.neuPixels_PF[ieta,  iphi ] = 0
-                self.neuPixels_PF[ietam, iphim]=0
+                self.neuTowers_Gen_merged.append((list(neuGen_merged), eta_merged, phi_merged))
+                self.neuTowers_PF_merged .append((list(neuPF_merged),  eta_merged, phi_merged))
 
 
-    def Pixels2NVPs(self, neuPixels, phoPixels, neuPuppiPixels, neuPixels_merged = []):
+                # clear the merged towers info
+                self.neuTowers_Gen[ieta,  iphi ]= 0
+                self.neuTowers_Gen[ietam, iphim]=0
+                self.neuTowers_PF[ieta,  iphi ] = 0
+                self.neuTowers_PF[ietam, iphim]=0
+
+
+    def Towers2NVPs(self, neuTowers, neuTowers_merged = []):
         """ 
         convert the energy deposit in cells to neutral 'virtual particles' 
         """
@@ -193,32 +278,35 @@ class neuToNVPProducer(Module):
         NVP_eta      = []
         NVP_phi      = []
         NVP_photonFraction  = []
-        NVP_pt_puppi = []
+        NVP_nPart    = []
+        NVP_puppiWeight = []
         NVP_isMerged = []
-        for ieta, iphi in zip(*np.where(neuPixels>0)):
+        NVP_firstPIndex = []
+        for ieta, iphi in zip(*np.where(neuTowers[:,:])):
             eta, phi = self.segment.getEtaPhi( ieta, iphi )
-            pt = neuPixels[ieta, iphi] / np.cosh(eta)
-            phofrac = phoPixels[ieta, iphi] / (neuPixels[ieta, iphi] + 1e-8)
-            pt_puppi = neuPuppiPixels[ieta, iphi] / np.cosh(eta)
+            tower = neuTowers[ieta, iphi]
 
-            NVP_pt .append( pt  )
-            NVP_eta.append( eta )
-            NVP_phi.append( phi )
-            NVP_photonFraction.append( phofrac ) 
-            NVP_pt_puppi.append( pt_puppi )
+            NVP_pt .append( tower.pt()  )
+            NVP_eta.append( tower.eta )
+            NVP_phi.append( tower.phi )
+            NVP_photonFraction.append( tower.photonFraction() ) 
+            NVP_nPart.append( tower.nPart )
+            NVP_puppiWeight.append( tower.puppiWeight() )
             NVP_isMerged.append( 0 )
+            NVP_firstPIndex.append( tower.firstPIndex() )
         
-        for E, Epho, Epuppi, eta, phi in neuPixels_merged:
-            NVP_pt .append( E/np.cosh(eta) )
+        for neumerged, eta, phi in neuTowers_merged:
+            NVP_pt .append( neumerged[0]/np.cosh(eta) )
             NVP_eta.append( eta )
             NVP_phi.append( phi )
-            NVP_photonFraction.append( Epho/(E+1e-8) )
-            NVP_pt_puppi.append( Epuppi/np.cosh(eta) )
+            NVP_photonFraction.append( neumerged[1]/(neumerged[0]+1e-8) )
+            NVP_nPart.append( int(neumerged[2]) )
+            NVP_pt_puppi.append( neumerged[3]/np.cosh(eta) )
             NVP_isMerged.append( 1 )
 
-        return NVP_pt, NVP_eta, NVP_phi, NVP_photonFraction, NVP_pt_puppi, NVP_isMerged
+        return NVP_pt, NVP_eta, NVP_phi, NVP_photonFraction, NVP_nPart, NVP_puppiWeight, NVP_isMerged, NVP_firstPIndex
 
-    def linkPFGen(self):
+    def linkPFGenTowers(self, GenColl, PFColl):
         """
         return the index of the PF and Gen with the same ieta iphi
         """
@@ -228,20 +316,18 @@ class neuToNVPProducer(Module):
         PF_index = -1
         Gen_index = -1
 
-        for ieta, iphi in zip(*np.where( (self.neuPixels_PF>0)|(self.neuPixels_Gen>0) )):
-            if self.neuPixels_PF[ieta, iphi]>0 and self.neuPixels_Gen[ieta, iphi]>0:
-                PF_index += 1
-                Gen_index += 1
+        for ieta, iphi in zip(*np.where( (self.neuTowers_PF[:,:]>0)|(self.neuTowers_Gen[:,:]>0) )):
+            if self.neuTowers_PF[ieta, iphi] and self.neuTowers_Gen[ieta, iphi]:
+                PF_index = self.neuTowers_PF[ieta, iphi].index
+                Gen_index = self.neuTowers_Gen[ieta, iphi].index
                 NVP_PF_toGenIndex.append( Gen_index )
                 NVP_Gen_toPFIndex.append( PF_index  )
-            elif self.neuPixels_PF[ieta, iphi]>0 and self.neuPixels_Gen[ieta, iphi]<=0:
-                PF_index += 1
+            elif self.neuTowers_PF[ieta, iphi] and not self.neuTowers_Gen[ieta, iphi]:
                 NVP_PF_toGenIndex.append( -1 )
-            elif self.neuPixels_PF[ieta, iphi]<=0 and self.neuPixels_Gen[ieta, iphi]>0:
-                Gen_index += 1
+            elif ( not self.neuTowers_PF[ieta, iphi] ) and self.neuTowers_Gen[ieta, iphi]:
                 NVP_Gen_toPFIndex.append( -1 )
 
-        for iGenm, iPFm in zip(self.neuPixels_Gen_merged, self.neuPixels_PF_merged):
+        for iGenm, iPFm in zip(self.neuTowers_Gen_merged, self.neuTowers_PF_merged):
             PF_index += 1
             Gen_index += 1
             NVP_PF_toGenIndex.append( Gen_index )
@@ -262,70 +348,94 @@ class neuToNVPProducer(Module):
     def analyze(self, event):
         """process event, return True (go to next module) or False (fail, go to next event)"""        
         muons = Collection(event, "Muon")
-        pfCands  = Collection(event, "PF")
-        packedGenParts = Collection(event, "packedGenPart") # gen particles from packedGenParticles (status==1)
+        self.pfCands  = Collection(event, "PF")
+        self.packedGenParts = Collection(event, "packedGenPart") # gen particles from packedGenParticles (status==1)
 
-        # PF
-        neuPFCands = []
         # check if the event has a good muon
         hasGoodMuon = ( muons[0].pt>20.0 and abs(muons[0].eta)<2.4 and muons[0].tightId )
         vetoCands = []
         if hasGoodMuon:
             vetoCands.append( muons[0] )
-        for p in pfCands:
+
+        # PF
+        neuPFCands = []
+        index = 0
+        for p in self.pfCands:
+            p.TIndex = -999
+            p.index = index
+            index += 1
             if abs(p.eta)>3.0: continue
-            if p.charge!=0 and abs(p.eta)<2.5: continue
+            # remove charged, HF, and photon candidates
+            #if p.charge!=0 and abs(p.eta)<2.5: continue
+            if p.charge!=0: continue
+            if p.pdgId in [1,2,22]: continue
+            if p.ptype!=2: continue
             if self.vetoCandidate(p, vetoCands ): continue
             neuPFCands.append( p )
 
-        self.neuPixels_PF, self.phoPixels_PF, self.neuPuppiPixels_PF = self.Neutrals2Pixels( neuPFCands, isPF = True )
+        self.neuTowers_PF = self.Neutrals2Towers( neuPFCands, isPF = True )
 
         # Gen
         vetoGens = []
-        for gp in packedGenParts:
+        for gp in self.packedGenParts:
             if abs(gp.pdgId) in [11, 13] and gp.pt > 20.0 and abs(gp.eta)<2.4 :
                 vetoGens.append( gp )
                 break
 
         neuGenCands = []
-        for gp in packedGenParts:
+        index = 0
+        for gp in self.packedGenParts:
+            gp.TIndex = -999
+            gp.index = index
+            index += 1
             if abs(gp.eta)>3.0: continue
             if gp.charge!=0 and abs(gp.eta)<2.5: continue
             if abs(gp.pdgId) in [12, 14, 16]: continue # veto neutrino
-            if abs(gp.pdgId)==22 and self.vetoCandidate(gp, vetoGens): continue
+            if abs(gp.pdgId)==22: continue # veto photon
+            if gp.ptype!=2: continue
+            #if abs(gp.pdgId)==22 and self.vetoCandidate(gp, vetoGens): continue
             neuGenCands.append( gp )
 
-        # neuPuppiPixels_Gen is placeholder, no meaning.
-        # just to make the format the same as the PF case
-        self.neuPixels_Gen, self.phoPixels_Gen, self.neuPuppiPixels_Gen = self.Neutrals2Pixels( neuGenCands )
+        self.neuTowers_Gen = self.Neutrals2Towers( neuGenCands )
 
-        self.neuPixels_Gen_merged = []
-        self.neuPixels_PF_merged  = []
+        self.neuTowers_Gen_merged = []
+        self.neuTowers_PF_merged  = []
 
-        self.MergePixels()
+        #self.MergeTowers()
 
-        NVP_PF_pt, NVP_PF_eta, NVP_PF_phi, NVP_PF_photonFraction, NVP_PF_pt_puppi, NVP_PF_isMerged = self.Pixels2NVPs( self.neuPixels_PF, self.phoPixels_PF, self.neuPuppiPixels_PF, self.neuPixels_PF_merged)
-        NVP_Gen_pt, NVP_Gen_eta, NVP_Gen_phi, NVP_Gen_photonFraction, NVP_Gen_pt_puppi, NVP_Gen_isMerged = self.Pixels2NVPs( self.neuPixels_Gen, self.phoPixels_Gen, self.neuPuppiPixels_Gen, self.neuPixels_Gen_merged)
+        NVP_PF_pt, NVP_PF_eta, NVP_PF_phi, NVP_PF_photonFraction, NVP_PF_nPart, NVP_PF_puppiWeight, NVP_PF_isMerged, NVP_PF_firstPIndex = self.Towers2NVPs( self.neuTowers_PF, self.neuTowers_PF_merged)
+        NVP_Gen_pt, NVP_Gen_eta, NVP_Gen_phi, NVP_Gen_photonFraction, NVP_Gen_nPart, NVP_Gen_puppiWeight, NVP_Gen_isMerged, NVP_Gen_firstPIndex = self.Towers2NVPs( self.neuTowers_Gen, self.neuTowers_Gen_merged)
 
         self.out.fillBranch("nNVP_PF",    len(NVP_PF_pt))
         self.out.fillBranch("NVP_PF_pt",  NVP_PF_pt )
         self.out.fillBranch("NVP_PF_eta", NVP_PF_eta)
         self.out.fillBranch("NVP_PF_phi", NVP_PF_phi)
         self.out.fillBranch("NVP_PF_photonFraction", NVP_PF_photonFraction)
-        self.out.fillBranch("NVP_PF_pt_puppi", NVP_PF_pt_puppi)
+        self.out.fillBranch("NVP_PF_nPart",    NVP_PF_nPart)
+        self.out.fillBranch("NVP_PF_puppiWeightNoLep", NVP_PF_puppiWeight)
         self.out.fillBranch("NVP_PF_isMerged", NVP_PF_isMerged)
+        self.out.fillBranch("NVP_PF_firstPIndex", NVP_PF_firstPIndex)
 
         self.out.fillBranch("nNVP_Gen",    len(NVP_Gen_pt))
         self.out.fillBranch("NVP_Gen_pt",  NVP_Gen_pt )
         self.out.fillBranch("NVP_Gen_eta", NVP_Gen_eta)
         self.out.fillBranch("NVP_Gen_phi", NVP_Gen_phi)
         self.out.fillBranch("NVP_Gen_photonFraction", NVP_Gen_photonFraction)
+        self.out.fillBranch("NVP_Gen_nPart",    NVP_Gen_nPart)
         self.out.fillBranch("NVP_Gen_isMerged", NVP_Gen_isMerged)
+        self.out.fillBranch("NVP_Gen_firstPIndex", NVP_Gen_firstPIndex)
 
         # build the map between PF and Gen
-        NVP_PF_toGenIndex, NVP_Gen_toPFIndex = self.linkPFGen()
+        NVP_PF_toGenIndex, NVP_Gen_toPFIndex = self.linkPFGenTowers( self.packedGenParts, self.pfCands )
         self.out.fillBranch("NVP_PF_toGenIndex",    NVP_PF_toGenIndex  )
         self.out.fillBranch("NVP_Gen_toPFIndex",    NVP_Gen_toPFIndex  )
+
+        # save the tower index of PF and Gen
+        TIndices_Gen = [ gp.TIndex for gp in self.packedGenParts ]
+        TIndices_PF  = [ p.TIndex  for p  in self.pfCands ]
+
+        self.out.fillBranch("packedGenPart_TowerIndex", TIndices_Gen) 
+        self.out.fillBranch("PF_TowerIndex",            TIndices_PF)
 
         return True
 

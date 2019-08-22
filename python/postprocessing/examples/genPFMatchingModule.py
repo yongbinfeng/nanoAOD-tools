@@ -31,11 +31,6 @@ class genPFMatchingProducer(Module):
         # match gen to PF
         self.out.branch("packedGenPart_toPFIndex",   "I", lenVar="npackedGenPart")
         self.out.branch("packedGenPart_toPFdR",      "F", lenVar="npackedGenPart")
-        self.out.branch("packedGenPart_toPFrpt",     "F", lenVar="npackedGenPart")
-        self.out.branch("packedGenPart_toSTPFIndex", "I", lenVar="npackedGenPart")
-        self.out.branch("packedGenPart_toSTPFdR",    "F", lenVar="npackedGenPart")
-        self.out.branch("packedGenPart_toSTPFrpt",   "F", lenVar="npackedGenPart")
-        # gen isolation ( please note there is a pt > 0.4 cut for the gen particles. So the isolation may not be correct.)
         self.out.branch("packedGenPart_chgIso1",     "F", lenVar="npackedGenPart")
         self.out.branch("packedGenPart_neuIso1",     "F", lenVar="npackedGenPart")
         self.out.branch("packedGenPart_phoIso1",     "F", lenVar="npackedGenPart")
@@ -48,12 +43,7 @@ class genPFMatchingProducer(Module):
         self.out.branch("PF_toGenrpt",             "F", lenVar="nPF") # pT_reco/ pT_sum_Gen
         self.out.branch("PF_toGendR",              "F", lenVar="nPF") # delta R between reco and the direction of sum Gen
         self.out.branch("PF_toGenmindR",           "F", lenVar="nPF") # min delta R between reco PF and the gens that are closest to this PF
-        self.out.branch("PF_toGenmindR_rpt",       "F", lenVar="nPF") # pT_reco / pT_Gen of the above Gen
-        self.out.branch("PF_toSTGenN",             "I", lenVar="nPF") # number of gen particles closest to this PF
-        self.out.branch("PF_toSTGenrpt",           "F", lenVar="nPF") # pT_reco/ pT_sum_Gen
-        self.out.branch("PF_toSTGendR",            "F", lenVar="nPF") # delta R between reco and the direction of sum Gen
-        self.out.branch("PF_toSTGenmindR",         "F", lenVar="nPF") # min delta R between reco PF and the gens that are closest to this PF
-        self.out.branch("PF_toSTGenmindR_rpt",     "F", lenVar="nPF") # pT_reco / pT_Gen of the above Gen
+        self.out.branch("PF_toGenmindRIndex",      "I", lenVar="nPF") # index of the Gen with mindR to PF
         self.out.branch("PF_ptype",                "I", lenVar="nPF")
         #self.out.branch("PF_neuIso1",              "O", lenVar="nPF")
         #self.out.branch("PF_neuIso3",              "O", lenVar="nPF")
@@ -75,13 +65,16 @@ class genPFMatchingProducer(Module):
     def getGenType(self, gp):
         """ return the type of gen particles """
         ptype = 0
-        if gp.charge!=0 and abs(gp.eta)<2.5:
+        if gp.charge!=0 and abs(gp.eta)<3.0:
             # charged particle
+            # there are still some charged pf outside tracker (2.5). 
+            # so try matching all charged gen within 3.0 first.
+            # If not matched, change the gen type from charged to neutral
             ptype = 1
-        elif ( ( gp.charge==0 and abs(gp.pdgId) not in [12, 14, 16, 22] ) or ( gp.charge!=0 and abs(gp.eta)>2.5 ) ):
+        elif gp.charge==0 and abs(gp.pdgId) not in [12, 14, 16, 22]:
             # neutral hadrons
             ptype = 2
-        if gp.charge==0 and abs(gp.pdgId)==22:
+        elif gp.charge==0 and abs(gp.pdgId)==22:
             # photon
             ptype= 3
         return ptype
@@ -89,11 +82,11 @@ class genPFMatchingProducer(Module):
     def getPFType(self, p):
         """ return the type for pf particles """
         ptype = 0
-        if p.charge!=0 and abs(p.eta)<2.5:
+        if p.charge!=0 and abs(p.eta)<3.0:
             ptype = 1
-        if p.charge==0 and abs(p.pdgId) == 130:
+        elif p.charge==0 and abs(p.pdgId) == 130:
             ptype = 2
-        if p.charge==0 and abs(p.pdgId) in [1,2,22]:# treat HF hadron and em as pho fraction for now
+        elif p.charge==0 and abs(p.pdgId) == 22:
             ptype = 3
         return ptype
 
@@ -156,6 +149,41 @@ class genPFMatchingProducer(Module):
                 if GenColl[igp].ptype == PFColl[ip].ptype:
                     self.AdrGenPFST[igp, ip] = dR
 
+    def mapGenToPF(self, GenColl, PFColl, selGen=lambda x: True, selPF=lambda x:True):
+        # map charged
+        for gp in GenColl:
+            if not selGen(gp): continue
+            dRmin = 999.0
+            matchedIndex = -999
+
+            for ip in xrange(len(PFColl)):
+                p = PFColl[ip]
+                if not selPF(p): continue
+                dR = deltaR(gp.eta, gp.phi, p.eta, p.phi)
+                if dR < dRmin:
+                    dRmin = dR
+                    matchedIndex = ip
+
+            if matchedIndex>=0:
+                p = PFColl[matchedIndex]
+                gp.toPFIndex = p.index
+                gp.toPFselectedIndex = matchedIndex
+                gp.toPFdR = dRmin
+
+
+    def updatePFInfo(self, GenColl, PFColl):
+        # save the matched information to PF if any Gen(s) is matched to it.
+        for gp in GenColl:
+            if gp.toPFselectedIndex >=0:
+                p = PFColl[gp.toPFselectedIndex]
+                # one PF could be matched to several Gens
+                p.toGenN += 1
+                p.toGen_sumpt += gp.p4()
+                if gp.toPFdR < p.toGen_mindR:
+                    # the closest Gen to PF
+                    p.toGen_mindR = gp.toPFdR
+                    p.toGen_mindRIndex = gp.index
+
 
     def mapGenPF(self, GenColl, PFColl):
         """ map gen particles to PF candidates """
@@ -198,10 +226,6 @@ class genPFMatchingProducer(Module):
         outputs = {}
         outputs["packedGenPart_toPFIndex"]   = [ gp.toPFIndex   for gp in packedGenParts ]
         outputs["packedGenPart_toPFdR"]      = [ gp.toPFdR      for gp in packedGenParts ]
-        outputs["packedGenPart_toPFrpt"]     = [ gp.toPFrpt     for gp in packedGenParts ]
-        outputs["packedGenPart_toSTPFIndex"] = [ gp.toSTPFIndex for gp in packedGenParts ]
-        outputs["packedGenPart_toSTPFdR"]    = [ gp.toSTPFdR    for gp in packedGenParts ]
-        outputs["packedGenPart_toSTPFrpt"]   = [ gp.toSTPFrpt   for gp in packedGenParts ]
         outputs["packedGenPart_chgIso1"]     = [ gp.chgIso1     for gp in packedGenParts ]
         outputs["packedGenPart_neuIso1"]     = [ gp.neuIso1     for gp in packedGenParts ]
         outputs["packedGenPart_phoIso1"]     = [ gp.phoIso1     for gp in packedGenParts ]
@@ -212,14 +236,9 @@ class genPFMatchingProducer(Module):
 
         outputs["PF_toGenN"]           = [ p.toGenN                           for p in pfCands ]
         outputs["PF_toGenmindR"]       = [ p.toGen_mindR                      for p in pfCands ]
-        outputs["PF_toGenmindR_rpt"]   = [ p.toGen_mindR_rpt                  for p in pfCands ]
+        outputs["PF_toGenmindRIndex"]  = [ p.toGen_mindRIndex                 for p in pfCands ]
         outputs["PF_toGenrpt"]         = [ p.pt/(p.toGen_sumpt.Pt()+1e-6)     for p in pfCands ]
         outputs["PF_toGendR"]          = [ p.p4().DeltaR(p.toGen_sumpt)       for p in pfCands ]
-        outputs["PF_toSTGenN"]         = [ p.toSTGenN                         for p in pfCands ]
-        outputs["PF_toSTGenmindR"]     = [ p.toSTGen_mindR                    for p in pfCands ]
-        outputs["PF_toSTGenmindR_rpt"] = [ p.toSTGen_mindR_rpt                for p in pfCands ]
-        outputs["PF_toSTGenrpt"]       = [ p.pt/(p.toSTGen_sumpt.Pt()+1e-6)   for p in pfCands ]
-        outputs["PF_toSTGendR"]        = [ p.p4().DeltaR(p.toSTGen_sumpt)     for p in pfCands ]
         outputs["PF_ptype"]            = [ p.ptype                            for p in pfCands ]
         #outputs["PF_neuIso1"]              = [ p.neuIso1    for p  in pfCands        ]
         #outputs["PF_neuIso3"]              = [ p.neuIso3    for p  in pfCands        ]
@@ -236,33 +255,25 @@ class genPFMatchingProducer(Module):
 
         pfCands_selected = []
         index = 0
-        # match PF candidates and gen with pt > 0.5 and |eta|<3.0
-        # cut at 0.4 and 3.1 to leave some space for the resolution
+        # match PF candidates and gen with |eta|<3.0
         for p in pfCands:
             p.toGenN = 0
             p.toGen_sumpt = ROOT.TLorentzVector()
             p.toGen_mindR = 999.0
-            p.toGen_mindR_rpt = -999.0
-            p.toSTGenN = 0
-            p.toSTGen_sumpt = ROOT.TLorentzVector()
-            p.toSTGen_mindR = 999.0
-            p.toSTGen_mindR_rpt = -999.0
+            p.toGen_mindRIndex = -999
             p.index = index
-            p.ptype = 0
-            if p.pt > 0.4 and abs( p.eta ) < 3.1:
-                p.ptype = self.getPFType( p )
-                pfCands_selected.append( p )
             index += 1
+            p.ptype = 0
+            if abs( p.eta ) > 3.0: continue
+            p.ptype = self.getPFType( p )
+            pfCands_selected.append( p )
 
         packedGenParts_selected = []
         index = 0 
         for gp in packedGenParts:
             gp.toPFIndex = -999
-            gp.toPFrpt = -999.0
+            gp.toPFselectedIndex = -999 # the matched PF index in pfCands_selected
             gp.toPFdR  = -999.0
-            gp.toSTPFIndex = -999
-            gp.toSTPFrpt = -999.0
-            gp.toSTPFdR  = -999.0
             gp.chgIso1 = -999.0
             gp.neuIso1 = -999.0
             gp.phoIso1 = -999.0
@@ -270,21 +281,40 @@ class genPFMatchingProducer(Module):
             gp.neuPFIso1 = -999.0
             gp.phoPFIso1 = -999.0
             gp.index = index
-            gp.ptype = 0
-            if gp.pt > 0.4 and abs( gp.eta ) < 3.1 and abs( gp.pdgId ) not in [12, 14, 16]:
-                gp.ptype = self.getGenType( gp ) 
-                packedGenParts_selected.append( gp ) 
             index += 1
+            gp.ptype = 0
+            if abs(gp.pdgId) in [12, 14, 16]: continue
+            if abs(gp.eta)>3.0: continue
+            gp.ptype = self.getGenType( gp ) 
+            packedGenParts_selected.append( gp ) 
+
+        # map charged Gen to charged PF
+        self.mapGenToPF( packedGenParts_selected, pfCands_selected, selGen=lambda gp: gp.ptype==1, selPF=lambda p: p.ptype==1 )
+        
+        # for gen chg, if outside 2.5 and not matched to PF, treat it as neutral hadrons or photons
+        for gp in packedGenParts_selected:
+            if gp.ptype==1 and abs(gp.eta)>2.5 and gp.toPFdR>0.02:
+                # electrons outside the tracker will be photons
+                # otherwise neutral hadrons
+                gp.ptype = 3 if abs(gp.pdgId)==11 else 2
+        
+        # map Gen photons to PF photons/electrons
+        self.mapGenToPF( packedGenParts_selected, pfCands_selected, selGen=lambda gp: gp.ptype==3, selPF=lambda p: (p.ptype==3 or abs(p.pdgId)==11) )
+
+        # map Gen neutral hadrons to PF neutral hadrons
+        self.mapGenToPF( packedGenParts_selected, pfCands_selected, selGen=lambda gp: gp.ptype==2, selPF=lambda p: p.ptype==2 )
+
+        self.updatePFInfo( packedGenParts_selected, pfCands_selected )
 
         # calculate deltaR between gen and pf and save to numpy array
-        self.makeDRMapGenPF( packedGenParts_selected, pfCands_selected )
+        #self.makeDRMapGenPF( packedGenParts_selected, pfCands_selected )
 
         # calculate isolations for selected packedGenParts
         #self.getIsolations( packedGenParts_selected )
         #self.getRecoIsolationForGen( packedGenParts_selected, pfCands_selected )
 
         ## match gen with the closest PF candidates
-        self.mapGenPF( packedGenParts_selected, pfCands_selected )
+        #self.mapGenPF( packedGenParts_selected, pfCands_selected )
 
         #  write the new properties of packedGenParts and PF cands to output 
         self.writeToOutput( packedGenParts, pfCands )
