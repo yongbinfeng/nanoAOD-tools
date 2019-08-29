@@ -133,6 +133,7 @@ class genPFMatchingProducer(Module):
             gp.neuPFIso1 = vneu1.Pt()
             gp.phoPFIso1 = vpho1.Pt()
 
+    # not used for now
     def makeDRMapGenPF(self, GenColl, PFColl):
         """ save the deltaR values betwee Gen and PF into numpy arrays """
 
@@ -169,7 +170,11 @@ class genPFMatchingProducer(Module):
                 gp.toPFIndex = p.index
                 gp.toPFselectedIndex = matchedIndex
                 gp.toPFdR = dRmin
-
+                p.toGenN += 1
+                p.toGen_sumpt += gp.p4()
+                if dRmin < p.toGen_mindR:
+                    p.toGen_mindR = dRmin
+                    p.toGen_mindRIndex = gp.index
 
     def updatePFInfo(self, GenColl, PFColl):
         # save the matched information to PF if any Gen(s) is matched to it.
@@ -185,6 +190,7 @@ class genPFMatchingProducer(Module):
                     p.toGen_mindRIndex = gp.index
 
 
+    # not used for now
     def mapGenPF(self, GenColl, PFColl):
         """ map gen particles to PF candidates """
         # inclusive mapping: loop over all gen particles and pf candidates in the GenColl and PFColl collection
@@ -301,10 +307,10 @@ class genPFMatchingProducer(Module):
         # map Gen photons to PF photons/electrons
         self.mapGenToPF( packedGenParts_selected, pfCands_selected, selGen=lambda gp: gp.ptype==3, selPF=lambda p: (p.ptype==3 or abs(p.pdgId)==11) )
 
-        # map Gen neutral hadrons to PF neutral hadrons
-        self.mapGenToPF( packedGenParts_selected, pfCands_selected, selGen=lambda gp: gp.ptype==2, selPF=lambda p: p.ptype==2 )
+        # map Gen neutral hadrons to PF neutral hadrons or PF photons far from gen photons
+        self.mapGenToPF( packedGenParts_selected, pfCands_selected, selGen=lambda gp: gp.ptype==2, selPF=lambda p: (p.ptype==2 or (p.ptype==3 and p.toGen_mindR>0.1)) )
 
-        self.updatePFInfo( packedGenParts_selected, pfCands_selected )
+        #self.updatePFInfo( packedGenParts_selected, pfCands_selected )
 
         # calculate deltaR between gen and pf and save to numpy array
         #self.makeDRMapGenPF( packedGenParts_selected, pfCands_selected )
