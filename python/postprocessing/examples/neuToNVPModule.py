@@ -365,8 +365,8 @@ class neuToNVPProducer(Module):
                 neuGen = self.neuTowers_Gen[ieta, iphi]
                 # skip the gen towers with pt smaller than 0.5
                 # (to remove more pileup)
-                if neuGen.pt() < 0.5:
-                    continue
+                #if neuGen.pt() < 0.5:
+                #    continue
                 dR = deltaR(neuGen.eta, neuGen.phi, neuPF.eta, neuPF.phi)
                 if dR < dRmin:
                     dRmin = dR
