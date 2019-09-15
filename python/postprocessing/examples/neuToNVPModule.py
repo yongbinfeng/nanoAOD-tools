@@ -73,6 +73,19 @@ class HCALSegmentation(object):
     def getEtaPhi(self, ieta, iphi):
         return self.getEta(ieta), self.getPhi(ieta, iphi)
 
+    def deltaIR(self, eta1, phi1, eta2, phi2):
+        dieta = self.getIEta(eta1) - self.getIEta(eta2)
+        dphi = phi1 - phi2
+        if dphi > np.pi: dphi = dphi - 2*np.pi
+        if dphi <-np.pi: dphi = dphi + 2*np.pi
+        if abs(eta1) >= self.etaCut or abs(eta2) >= self.etaCut:
+            diphi = dphi/(2*np.pi/self.nPhiHE)
+        else:
+            diphi = dphi/(2*np.pi/self.nPhiHB)
+
+        return np.hypot( dieta, diphi )
+        
+
     def formatIEtaIPhi(self, ietaiphicands):
         # given ieta, iphi, check if it makes sense:
         # e.g., ieta > nEtas, 
@@ -191,7 +204,11 @@ class neuToNVPProducer(Module):
             self.out.branch("NVP_%s_firstPIndex"%itype, "I", lenVar="nNVP_%s"%itype)
         self.out.branch("NVP_PF_puppiWeightNoLep",   "F", lenVar="nNVP_PF")
         self.out.branch("NVP_PF_toGenIndex", "I", lenVar="nNVP_PF")
+        self.out.branch("NVP_PF_toGendR",    "F", lenVar="nNVP_PF")
+        self.out.branch("NVP_PF_toGendIR",   "F", lenVar="nNVP_PF")
         self.out.branch("NVP_Gen_toPFIndex", "I", lenVar="nNVP_Gen")
+        self.out.branch("NVP_Gen_toPFdR",    "F", lenVar="nNVP_Gen")
+        self.out.branch("NVP_Gen_toPFdIR",   "F", lenVar="nNVP_Gen")
         self.out.branch("packedGenPart_TowerIndex", "I", lenVar="npackedGenPart")
         self.out.branch("PF_TowerIndex",            "I", lenVar="nPF")
 
@@ -227,18 +244,21 @@ class neuToNVPProducer(Module):
         return neuTowers
 
     def MergeTowers(self):
+        # this function CAN NOT BE USED FOR NOW
         """
         Merge the towers for Gen and PF if one is Gen > 1.25 * PF, and
         if merging the connected cell could make the merged one smaller
         """
-        for ieta, iphi in zip(*np.where(self.neuTowers_Gen[:,:,0]>0)):
+        for ieta, iphi in zip(*np.where(self.neuTowers_Gen[:,:]>0)):
 
-            E_Gen = self.neuTowers_Gen[ieta, iphi, 0]
-            if E_Gen/np.cosh(self.segment.getEta(ieta)) < 0.5:
+            E_Gen = self.neuTowers_Gen[ieta, iphi].energy
+            neuGen = self.neuTowers_Gen[ieta, iphi]
+            #if E_Gen/np.cosh(self.segment.getEta(ieta)) < 0.5:
+            if neuGen.pt() < 0.5:
                 # only merge pT > 0.5 GeV cells
                 continue
-            if self.neuTowers_PF[ieta, iphi, 0] > 0.8 * E_Gen:
-                continue 
+            #if self.neuTowers_PF[ieta, iphi].energy > 0.8 * neuGen.energy
+            #    continue 
 
             r_best = 1e8
             ietaiphim = None
@@ -334,7 +354,54 @@ class neuToNVPProducer(Module):
             NVP_Gen_toPFIndex.append( PF_index )
 
         return NVP_PF_toGenIndex, NVP_Gen_toPFIndex
-                
+
+    def mapPFNVPToGenNVP(self):
+        for ieta, iphi in zip(*np.where(self.neuTowers_PF[:,:]>0)):
+            neuPF = self.neuTowers_PF[ieta, iphi]
+            dRmin = 999
+            matchedGenNVP = None
+
+            for ieta, iphi in zip(*np.where(self.neuTowers_Gen[:,:]>0)):
+                neuGen = self.neuTowers_Gen[ieta, iphi]
+                # skip the gen towers with pt smaller than 0.5
+                # (to remove more pileup)
+                if neuGen.pt() < 0.5:
+                    continue
+                dR = deltaR(neuGen.eta, neuGen.phi, neuPF.eta, neuPF.phi)
+                if dR < dRmin:
+                    dRmin = dR
+                    matchedGenNVP = neuGen
+                if dRmin<1e-5:
+                    break
+
+            if matchedGenNVP:
+                neuPF.toGenIndex = matchedGenNVP.index
+                neuPF.toGendR = dRmin
+                matchedGenNVP.toPFIndex = neuPF.index
+                matchedGenNVP.toPFdR = dRmin
+                # calculate hypot(ieta, iphi)
+                dIR = self.segment.deltaIR( matchedGenNVP.eta, matchedGenNVP.phi, neuPF.eta, neuPF.phi )
+                neuPF.toGendIR = dIR
+                matchedGenNVP.toPFdIR = dIR
+
+        NVP_PF_toGenIndex = []
+        NVP_PF_toGendR    = []
+        NVP_PF_toGendIR   = []
+        for ieta, iphi in zip(*np.where(self.neuTowers_PF[:,:]>0)):
+            NVP_PF_toGenIndex.append( getattr(self.neuTowers_PF[ieta, iphi], "toGenIndex", -999) )
+            NVP_PF_toGendR.append(    getattr(self.neuTowers_PF[ieta, iphi], "toGendR",     999) )
+            NVP_PF_toGendIR.append(   getattr(self.neuTowers_PF[ieta, iphi], "toGendIR",    999) )
+
+        NVP_Gen_toPFIndex = []
+        NVP_Gen_toPFdR    = []
+        NVP_Gen_toPFdIR   = []
+        for ieta, iphi in zip(*np.where(self.neuTowers_Gen[:,:]>0)):
+            NVP_Gen_toPFIndex.append( getattr(self.neuTowers_Gen[ieta, iphi], "toPFIndex", -999) )
+            NVP_Gen_toPFdR.append(    getattr(self.neuTowers_Gen[ieta, iphi], "toPFdR",     999) )
+            NVP_Gen_toPFdIR.append(   getattr(self.neuTowers_Gen[ieta, iphi], "toPFdIR",    999) )
+
+        return NVP_PF_toGenIndex, NVP_PF_toGendR, NVP_PF_toGendIR, NVP_Gen_toPFIndex, NVP_Gen_toPFdR, NVP_Gen_toPFdIR
+
 
     def vetoCandidate(self, pcand, vetoCands):
         """ given input pcand and vetoCands, decide if the pcand
@@ -362,14 +429,18 @@ class neuToNVPProducer(Module):
         index = 0
         for p in self.pfCands:
             p.TIndex = -999
+            p.toGenNVPdR = 999
+            p.toGenNVPIndex = -999
             p.index = index
             index += 1
             if abs(p.eta)>3.0: continue
             # remove charged, HF, and photon candidates
             #if p.charge!=0 and abs(p.eta)<2.5: continue
             if p.charge!=0: continue
-            if p.pdgId in [1,2,22]: continue
-            if p.ptype!=2: continue
+            #if p.pdgId in [1,2,22]: continue
+            #if p.ptype!=2: continue
+            if p.pdgId in [1,2]: continue
+            if p.ptype!=2 and p.ptype!=3: continue
             if self.vetoCandidate(p, vetoCands ): continue
             neuPFCands.append( p )
 
@@ -391,9 +462,10 @@ class neuToNVPProducer(Module):
             if abs(gp.eta)>3.0: continue
             if gp.charge!=0 and abs(gp.eta)<2.5: continue
             if abs(gp.pdgId) in [12, 14, 16]: continue # veto neutrino
-            if abs(gp.pdgId)==22: continue # veto photon
-            if gp.ptype!=2: continue
-            #if abs(gp.pdgId)==22 and self.vetoCandidate(gp, vetoGens): continue
+            #if abs(gp.pdgId)==22: continue # veto photon
+            #if gp.ptype!=2: continue
+            if gp.ptype!=2 and gp.ptype!=3: continue
+            if abs(gp.pdgId)==22 and self.vetoCandidate(gp, vetoGens): continue
             neuGenCands.append( gp )
 
         self.neuTowers_Gen = self.Neutrals2Towers( neuGenCands )
@@ -425,10 +497,17 @@ class neuToNVPProducer(Module):
         self.out.fillBranch("NVP_Gen_isMerged", NVP_Gen_isMerged)
         self.out.fillBranch("NVP_Gen_firstPIndex", NVP_Gen_firstPIndex)
 
-        # build the map between PF and Gen
-        NVP_PF_toGenIndex, NVP_Gen_toPFIndex = self.linkPFGenTowers( self.packedGenParts, self.pfCands )
-        self.out.fillBranch("NVP_PF_toGenIndex",    NVP_PF_toGenIndex  )
-        self.out.fillBranch("NVP_Gen_toPFIndex",    NVP_Gen_toPFIndex  )
+        # build the map between PF NVP and Gen NVP
+        #NVP_PF_toGenIndex, NVP_Gen_toPFIndex = self.linkPFGenTowers( self.packedGenParts, self.pfCands )
+        #self.out.fillBranch("NVP_PF_toGenIndex",    NVP_PF_toGenIndex  )
+        #self.out.fillBranch("NVP_Gen_toPFIndex",    NVP_Gen_toPFIndex  )
+        NVP_PF_toGenIndex, NVP_PF_toGendR, NVP_PF_toGendIR, NVP_Gen_toPFIndex, NVP_Gen_toPFdR, NVP_Gen_toPFdIR= self.mapPFNVPToGenNVP()
+        self.out.fillBranch("NVP_PF_toGenIndex", NVP_PF_toGenIndex)
+        self.out.fillBranch("NVP_PF_toGendR",    NVP_PF_toGendR)
+        self.out.fillBranch("NVP_PF_toGendIR",   NVP_PF_toGendIR)
+        self.out.fillBranch("NVP_Gen_toPFIndex", NVP_Gen_toPFIndex)
+        self.out.fillBranch("NVP_Gen_toPFdR",    NVP_Gen_toPFdR)
+        self.out.fillBranch("NVP_Gen_toPFdIR",   NVP_Gen_toPFdIR)
 
         # save the tower index of PF and Gen
         TIndices_Gen = [ gp.TIndex for gp in self.packedGenParts ]

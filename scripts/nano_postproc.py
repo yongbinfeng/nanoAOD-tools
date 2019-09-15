@@ -11,15 +11,17 @@ def prepare_condor_jobs(arglist):
     inputdir = arglist[2]
 
     for ifile in os.listdir(inputdir):
-        #res = re.match("myNanoProdMc2016_NANO_([7-9]\d+).root", ifile)
-        res = re.match("myNanoProdMc2016_NANO_(7\d+).root", ifile)
+        #res = re.match("myNanoProdMc2016_NANO_(7\d+).root", ifile)
+        res = re.match("myNanoProdMc2016_NANO_([5-9]\d+).root", ifile)
         if res is None:
            continue
         fname = inputdir + "/" + ifile
         short = res.group(1)
+        if int(short)>=70:
+            continue
 
         # prepare the log directory
-        logdir = os.environ['PWD']+'/'+ "logs_v5"
+        logdir = os.environ['PWD']+'/'+ "logs_v8"
         logdir = logdir.rstrip("/")
         if not os.path.exists(logdir):
             os.system("mkdir -p "+logdir)
@@ -48,7 +50,7 @@ Output     = {pid}.out
 Error      = {pid}.error
 getenv      = True
 environment = "LS_SUBCWD={here}"
-+JobFlavour = "tomorrow"
++JobFlavour = "workday"
 queue 1\n
 """.format(
            here=os.environ['PWD'],
@@ -105,7 +107,8 @@ def main():
     modules = []
     defaults_to_import =[ 
                             ('PhysicsTools.NanoAODTools.postprocessing.examples.recoilModule', 'recoilModuleConstr'),
-                            ('PhysicsTools.NanoAODTools.postprocessing.examples.genPFMatchingModule', 'genPFMatchingModuleConstr'),
+                            #('PhysicsTools.NanoAODTools.postprocessing.examples.genPFMatchingModule', 'genPFMatchingModuleConstr'),
+                            ('PhysicsTools.NanoAODTools.postprocessing.examples.pfGenMatchingModule', 'pfGenMatchingModuleConstr'),
                             ('PhysicsTools.NanoAODTools.postprocessing.examples.neuToNVPModule', 'neuToNVPModuleConstr'),
                         ]
     for mod, names in options.imports + defaults_to_import: 
