@@ -108,10 +108,12 @@ class pfGenMatchingProducer(Module):
         outputs["packedGenPart_toPFmindR"]        = [ gp.toPF_mindR        for gp in packedGenParts ]
         outputs["packedGenPart_toPFN"]            = [ gp.toPFN             for gp in packedGenParts ]
         outputs["packedGenPart_ptype"]            = [ gp.ptype             for gp in packedGenParts ]
+        outputs["packedGenPart_index"]            = [ gp.index             for gp in packedGenParts ]
 
         outputs["PF_toGendR"]          = [ p.toGendR                      for p in pfCands ]
         outputs["PF_toGenIndex"]       = [ p.toGenIndex                   for p in pfCands ]
         outputs["PF_ptype"]            = [ p.ptype                        for p in pfCands ]
+        outputs["PF_index"]            = [ p.index                        for p in pfCands ]
 
         for ikey, ioutput in outputs.iteritems():
             self.out.fillBranch( ikey,  ioutput )
