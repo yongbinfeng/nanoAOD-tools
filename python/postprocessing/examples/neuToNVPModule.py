@@ -178,6 +178,20 @@ class HCALTower(object):
         # return the index of the fist particle in this tower
         return self.pIndices[0]
 
+class GenHCALTower(HCALTower):
+    def __init__(self, ieta, iphi, pt, eta, phi, mass, pindex, photonFraction = 0., puppiWeight=1.0, isMerged = False):
+        super(GenHCALTower, self).__init__(ieta, iphi, pt, eta, phi, mass, pindex, photonFraction, puppiWeight, isMerged)
+        self.toPFmindR = 999.
+        self.toPFmindRdIR = 999.
+        self.toPFmindRIndex = -999
+
+class PFHCALTower(HCALTower):
+    def __init__(self,ieta, iphi, pt, eta, phi, mass, pindex, photonFraction = 0., puppiWeight=1.0, isMerged = False):
+        super(PFHCALTower, self).__init__(ieta, iphi, pt, eta, phi, mass, pindex, photonFraction, puppiWeight, isMerged)
+        self.toGendR = 999.
+        self.toGendIR = 999.
+        self.toGenIndex = -999
+
 
 class neuToNVPProducer(Module):
     """ 
@@ -202,13 +216,14 @@ class neuToNVPProducer(Module):
             self.out.branch("NVP_%s_nPart"%itype,    "I", lenVar="nNVP_%s"%itype)
             self.out.branch("NVP_%s_isMerged"%itype, "O", lenVar="nNVP_%s"%itype)
             self.out.branch("NVP_%s_firstPIndex"%itype, "I", lenVar="nNVP_%s"%itype)
+            self.out.branch("NVP_%s_index"%itype, "I", lenVar="nNVP_%s"%itype)
         self.out.branch("NVP_PF_puppiWeightNoLep",   "F", lenVar="nNVP_PF")
         self.out.branch("NVP_PF_toGenIndex", "I", lenVar="nNVP_PF")
         self.out.branch("NVP_PF_toGendR",    "F", lenVar="nNVP_PF")
         self.out.branch("NVP_PF_toGendIR",   "F", lenVar="nNVP_PF")
-        self.out.branch("NVP_Gen_toPFIndex", "I", lenVar="nNVP_Gen")
-        self.out.branch("NVP_Gen_toPFdR",    "F", lenVar="nNVP_Gen")
-        self.out.branch("NVP_Gen_toPFdIR",   "F", lenVar="nNVP_Gen")
+        self.out.branch("NVP_Gen_toPFmindRIndex", "I", lenVar="nNVP_Gen")
+        self.out.branch("NVP_Gen_toPFmindR",    "F", lenVar="nNVP_Gen")
+        self.out.branch("NVP_Gen_toPFmindRdIR",   "F", lenVar="nNVP_Gen")
         self.out.branch("packedGenPart_TowerIndex", "I", lenVar="npackedGenPart")
         self.out.branch("PF_TowerIndex",            "I", lenVar="nPF")
 
@@ -223,7 +238,10 @@ class neuToNVPProducer(Module):
         for p in NeuColl:
             ieta, iphi = self.segment.getIEtaIPhi( p.eta, p.phi )
             puppiWeight = p.puppiWeightNoLep if isPF else 1.0
-            ptower = HCALTower( ieta, iphi, p.pt, p.eta, p.phi, p.mass, p.index, (abs(p.pdgId)==22), puppiWeight )
+            if isPF:
+                ptower = PFHCALTower(  ieta, iphi, p.pt, p.eta, p.phi, p.mass, p.index, (abs(p.pdgId)==22), puppiWeight )
+            else:
+                ptower = GenHCALTower( ieta, iphi, p.pt, p.eta, p.phi, p.mass, p.index, (abs(p.pdgId)==22), puppiWeight )
             if neuTowers[ieta, iphi]==None:
                 neuTowers[ieta, iphi] = ptower
             else:
@@ -302,6 +320,7 @@ class neuToNVPProducer(Module):
         NVP_puppiWeight = []
         NVP_isMerged = []
         NVP_firstPIndex = []
+        NVP_index = []
         for ieta, iphi in zip(*np.where(neuTowers[:,:])):
             eta, phi = self.segment.getEtaPhi( ieta, iphi )
             tower = neuTowers[ieta, iphi]
@@ -314,6 +333,7 @@ class neuToNVPProducer(Module):
             NVP_puppiWeight.append( tower.puppiWeight() )
             NVP_isMerged.append( 0 )
             NVP_firstPIndex.append( tower.firstPIndex() )
+            NVP_index.append( tower.index )
         
         for neumerged, eta, phi in neuTowers_merged:
             NVP_pt .append( neumerged[0]/np.cosh(eta) )
@@ -324,7 +344,7 @@ class neuToNVPProducer(Module):
             NVP_pt_puppi.append( neumerged[3]/np.cosh(eta) )
             NVP_isMerged.append( 1 )
 
-        return NVP_pt, NVP_eta, NVP_phi, NVP_photonFraction, NVP_nPart, NVP_puppiWeight, NVP_isMerged, NVP_firstPIndex
+        return NVP_pt, NVP_eta, NVP_phi, NVP_photonFraction, NVP_nPart, NVP_puppiWeight, NVP_isMerged, NVP_firstPIndex, NVP_index
 
     def linkPFGenTowers(self, GenColl, PFColl):
         """
@@ -377,30 +397,31 @@ class neuToNVPProducer(Module):
             if matchedGenNVP:
                 neuPF.toGenIndex = matchedGenNVP.index
                 neuPF.toGendR = dRmin
-                matchedGenNVP.toPFIndex = neuPF.index
-                matchedGenNVP.toPFdR = dRmin
                 # calculate hypot(ieta, iphi)
                 dIR = self.segment.deltaIR( matchedGenNVP.eta, matchedGenNVP.phi, neuPF.eta, neuPF.phi )
                 neuPF.toGendIR = dIR
-                matchedGenNVP.toPFdIR = dIR
+                if dRmin < matchedGenNVP.toPFmindR:
+                    matchedGenNVP.toPFmindRIndex = neuPF.index
+                    matchedGenNVP.toPFmindR = dRmin
+                    matchedGenNVP.toPFmindRdIR = dIR
 
         NVP_PF_toGenIndex = []
         NVP_PF_toGendR    = []
         NVP_PF_toGendIR   = []
         for ieta, iphi in zip(*np.where(self.neuTowers_PF[:,:]>0)):
-            NVP_PF_toGenIndex.append( getattr(self.neuTowers_PF[ieta, iphi], "toGenIndex", -999) )
-            NVP_PF_toGendR.append(    getattr(self.neuTowers_PF[ieta, iphi], "toGendR",     999) )
-            NVP_PF_toGendIR.append(   getattr(self.neuTowers_PF[ieta, iphi], "toGendIR",    999) )
+            NVP_PF_toGenIndex.append( self.neuTowers_PF[ieta, iphi].toGenIndex )
+            NVP_PF_toGendR.append(    self.neuTowers_PF[ieta, iphi].toGendR  )
+            NVP_PF_toGendIR.append(   self.neuTowers_PF[ieta, iphi].toGendIR )
 
-        NVP_Gen_toPFIndex = []
-        NVP_Gen_toPFdR    = []
-        NVP_Gen_toPFdIR   = []
+        NVP_Gen_toPFmindRIndex = []
+        NVP_Gen_toPFmindR      = []
+        NVP_Gen_toPFmindRdIR   = []
         for ieta, iphi in zip(*np.where(self.neuTowers_Gen[:,:]>0)):
-            NVP_Gen_toPFIndex.append( getattr(self.neuTowers_Gen[ieta, iphi], "toPFIndex", -999) )
-            NVP_Gen_toPFdR.append(    getattr(self.neuTowers_Gen[ieta, iphi], "toPFdR",     999) )
-            NVP_Gen_toPFdIR.append(   getattr(self.neuTowers_Gen[ieta, iphi], "toPFdIR",    999) )
+            NVP_Gen_toPFmindRIndex.append( self.neuTowers_Gen[ieta, iphi].toPFmindRIndex )
+            NVP_Gen_toPFmindR.append(      self.neuTowers_Gen[ieta, iphi].toPFmindR      )
+            NVP_Gen_toPFmindRdIR.append(   self.neuTowers_Gen[ieta, iphi].toPFmindRdIR   )
 
-        return NVP_PF_toGenIndex, NVP_PF_toGendR, NVP_PF_toGendIR, NVP_Gen_toPFIndex, NVP_Gen_toPFdR, NVP_Gen_toPFdIR
+        return NVP_PF_toGenIndex, NVP_PF_toGendR, NVP_PF_toGendIR, NVP_Gen_toPFmindRIndex, NVP_Gen_toPFmindR, NVP_Gen_toPFmindRdIR
 
 
     def vetoCandidate(self, pcand, vetoCands):
@@ -475,8 +496,8 @@ class neuToNVPProducer(Module):
 
         #self.MergeTowers()
 
-        NVP_PF_pt, NVP_PF_eta, NVP_PF_phi, NVP_PF_photonFraction, NVP_PF_nPart, NVP_PF_puppiWeight, NVP_PF_isMerged, NVP_PF_firstPIndex = self.Towers2NVPs( self.neuTowers_PF, self.neuTowers_PF_merged)
-        NVP_Gen_pt, NVP_Gen_eta, NVP_Gen_phi, NVP_Gen_photonFraction, NVP_Gen_nPart, NVP_Gen_puppiWeight, NVP_Gen_isMerged, NVP_Gen_firstPIndex = self.Towers2NVPs( self.neuTowers_Gen, self.neuTowers_Gen_merged)
+        NVP_PF_pt, NVP_PF_eta, NVP_PF_phi, NVP_PF_photonFraction, NVP_PF_nPart, NVP_PF_puppiWeight, NVP_PF_isMerged, NVP_PF_firstPIndex, NVP_PF_index = self.Towers2NVPs( self.neuTowers_PF, self.neuTowers_PF_merged)
+        NVP_Gen_pt, NVP_Gen_eta, NVP_Gen_phi, NVP_Gen_photonFraction, NVP_Gen_nPart, NVP_Gen_puppiWeight, NVP_Gen_isMerged, NVP_Gen_firstPIndex, NVP_Gen_index = self.Towers2NVPs( self.neuTowers_Gen, self.neuTowers_Gen_merged)
 
         self.out.fillBranch("nNVP_PF",    len(NVP_PF_pt))
         self.out.fillBranch("NVP_PF_pt",  NVP_PF_pt )
@@ -487,6 +508,7 @@ class neuToNVPProducer(Module):
         self.out.fillBranch("NVP_PF_puppiWeightNoLep", NVP_PF_puppiWeight)
         self.out.fillBranch("NVP_PF_isMerged", NVP_PF_isMerged)
         self.out.fillBranch("NVP_PF_firstPIndex", NVP_PF_firstPIndex)
+        self.out.fillBranch("NVP_PF_index", NVP_PF_index)
 
         self.out.fillBranch("nNVP_Gen",    len(NVP_Gen_pt))
         self.out.fillBranch("NVP_Gen_pt",  NVP_Gen_pt )
@@ -496,18 +518,19 @@ class neuToNVPProducer(Module):
         self.out.fillBranch("NVP_Gen_nPart",    NVP_Gen_nPart)
         self.out.fillBranch("NVP_Gen_isMerged", NVP_Gen_isMerged)
         self.out.fillBranch("NVP_Gen_firstPIndex", NVP_Gen_firstPIndex)
+        self.out.fillBranch("NVP_Gen_index", NVP_Gen_index)
 
         # build the map between PF NVP and Gen NVP
         #NVP_PF_toGenIndex, NVP_Gen_toPFIndex = self.linkPFGenTowers( self.packedGenParts, self.pfCands )
         #self.out.fillBranch("NVP_PF_toGenIndex",    NVP_PF_toGenIndex  )
         #self.out.fillBranch("NVP_Gen_toPFIndex",    NVP_Gen_toPFIndex  )
-        NVP_PF_toGenIndex, NVP_PF_toGendR, NVP_PF_toGendIR, NVP_Gen_toPFIndex, NVP_Gen_toPFdR, NVP_Gen_toPFdIR= self.mapPFNVPToGenNVP()
+        NVP_PF_toGenIndex, NVP_PF_toGendR, NVP_PF_toGendIR, NVP_Gen_toPFmindRIndex, NVP_Gen_toPFmindR, NVP_Gen_toPFmindRdIR= self.mapPFNVPToGenNVP()
         self.out.fillBranch("NVP_PF_toGenIndex", NVP_PF_toGenIndex)
         self.out.fillBranch("NVP_PF_toGendR",    NVP_PF_toGendR)
         self.out.fillBranch("NVP_PF_toGendIR",   NVP_PF_toGendIR)
-        self.out.fillBranch("NVP_Gen_toPFIndex", NVP_Gen_toPFIndex)
-        self.out.fillBranch("NVP_Gen_toPFdR",    NVP_Gen_toPFdR)
-        self.out.fillBranch("NVP_Gen_toPFdIR",   NVP_Gen_toPFdIR)
+        self.out.fillBranch("NVP_Gen_toPFmindRIndex", NVP_Gen_toPFmindRIndex)
+        self.out.fillBranch("NVP_Gen_toPFmindR",      NVP_Gen_toPFmindR)
+        self.out.fillBranch("NVP_Gen_toPFmindRdIR",   NVP_Gen_toPFmindRdIR)
 
         # save the tower index of PF and Gen
         TIndices_Gen = [ gp.TIndex for gp in self.packedGenParts ]

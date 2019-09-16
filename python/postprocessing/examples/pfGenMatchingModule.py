@@ -29,10 +29,12 @@ class pfGenMatchingProducer(Module):
         self.out.branch("packedGenPart_toPFmindR",        "F", lenVar="npackedGenPart")
         self.out.branch("packedGenPart_toPFN",            "I", lenVar="npackedGenPart")
         self.out.branch("packedGenPart_ptype",            "I", lenVar="npackedGenPart")
+        self.out.branch("packedGenPart_index",            "I", lenVar="npackedGenPart")
 
         self.out.branch("PF_toGendR",              "F", lenVar="nPF") # smallest delta R between reco and Gen 
         self.out.branch("PF_toGenIndex",           "I", lenVar="nPF") # index of the Gen with mindR to PF
         self.out.branch("PF_ptype",                "I", lenVar="nPF")
+        self.out.branch("PF_index",                "I", lenVar="nPF")
 
 
     def endFile(self, inputFile, outputFile, inputTree, wrappedOutputTree):
