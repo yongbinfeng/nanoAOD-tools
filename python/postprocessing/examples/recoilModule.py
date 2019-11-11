@@ -34,8 +34,12 @@ class recoilProducer(Module):
         self.out.branch("pT_W",          "F");
         self.out.branch("eta_W",         "F");
         self.out.branch("phi_W",         "F");
+        self.out.branch("foundGenZ",     "O");
+        self.out.branch("pT_Z",          "F");
+        self.out.branch("eta_Z",         "F");
+        self.out.branch("phi_Z",         "F");
 
-        self.out.branch("hasGoodMuon",   "O");
+        self.out.branch("hasGoodMuon",   "I");
 
         for u in self.recoils + self.genrecoils:
             self.out.branch("u_%s_pt"  %u,    "F");
@@ -47,23 +51,23 @@ class recoilProducer(Module):
     def endFile(self, inputFile, outputFile, inputTree, wrappedOutputTree):
         pass
 
-    def getGenW(self, genParts):
-        """ to find the Gen W boson and its momentum from genParts """
-        foundGenW = False
-        pT_W  = -999.0
-        phi_W = -999.0
-        eta_W = -999.0
+    def getGenV(self, genParts, pdgId=24):
+        """ to find the Gen W/Z boson and its momentum from genParts """
+        foundGenV = False
+        pT_V  = -999.0
+        phi_V = -999.0
+        eta_V = -999.0
 
         for p in genParts:
-            if abs(p.pdgId) != 24: continue
+            if abs(p.pdgId) != pdgId: continue
             if p.status != 62: continue
-            foundGenW = True
-            pT_W = p.pt
-            eta_W = p.eta
-            phi_W = p.phi
+            foundGenV = True
+            pT_V = p.pt
+            eta_V = p.eta
+            phi_V = p.phi
             break
 
-        return (foundGenW, pT_W, eta_W, phi_W)
+        return (foundGenV, pT_V, eta_V, phi_V)
 
 
     def vetoCandidate(self, pcand, vetoCands):
@@ -85,18 +89,26 @@ class recoilProducer(Module):
         packedGenParts = Collection(event, "packedGenPart") # gen particles from packedGenParticles (status==1)
 
         # get the Gen W
-        foundGenW, pT_W, eta_W, phi_W = self.getGenW( genParts )
+        foundGenW, pT_W, eta_W, phi_W = self.getGenV( genParts, pdgId=24)
         self.out.fillBranch("foundGenW", foundGenW )
         self.out.fillBranch("pT_W",      pT_W      )
         self.out.fillBranch("eta_W",     eta_W     )
         self.out.fillBranch("phi_W",     phi_W     )
 
-        # check if the event has a good muon
-        hasGoodMuon = ( muons[0].pt>20.0 and abs(muons[0].eta)<2.4 and muons[0].tightId )
-        self.out.fillBranch("hasGoodMuon",  hasGoodMuon )
+        # get the Gen W
+        foundGenZ, pT_Z, eta_Z, phi_Z = self.getGenV( genParts, pdgId=23)
+        self.out.fillBranch("foundGenZ", foundGenZ )
+        self.out.fillBranch("pT_Z",      pT_Z      )
+        self.out.fillBranch("eta_Z",     eta_Z     )
+        self.out.fillBranch("phi_Z",     phi_Z     )
+
+        # check if the event has good muon(s)
         vetoCands = []
-        if hasGoodMuon:
-            vetoCands.append( muons[0] )
+        for mu in muons:
+            if mu.pt>20.0 and abs(mu.eta)<2.4 and mu.tightId and mu.pfRelIso03_all<0.15:
+                vetoCands.append( mu )
+        hasGoodMuon = len(vetoCands)
+        self.out.fillBranch("hasGoodMuon",  hasGoodMuon )
 
         # calculate different kinds of reco recoil
         ulorenzs = {}
@@ -133,21 +145,26 @@ class recoilProducer(Module):
 
         # calculate the Gen recoils
         vetoGens = []
-        for gp in packedGenParts:
-            if abs(gp.pdgId) in [11, 13] and gp.pt > 20.0 and abs(gp.eta)<2.4 :
-                vetoGens.append( gp )
-                break
+        #for gp in packedGenParts:
+        #    if abs(gp.pdgId) in [11, 13] and gp.pt > 20.0 and abs(gp.eta)<2.4 :
+        #        vetoGens.append( gp )
+        #        if len(vetoGens)>=2:
+        #            break
 
         ugenlorenzs = {}
         for ugen in self.genrecoils:
             ugenlorenzs[ugen] = ROOT.TLorentzVector()
 
-        nlep = 0
+        #nlep = 0
         for gp in packedGenParts:
             if abs(gp.pdgId) in [12, 14, 16]: continue # veto neutrino
-            if abs(gp.pdgId) in [11, 13] and nlep < 1:
-                # veto the first lepton
-                nlep += 1
+            #if abs(gp.pdgId) in [11, 13] and gp.pt > 20.0 and abs(gp.eta)<2.4 and nlep<2:
+            #    # veto the first 2 leptons
+            #    nlep += 1
+            #    continue
+
+            # veto Gen leptons that are close to the high pT reco leptons
+            if abs(gp.pdgId) in [11, 13] and self.vetoCandidate(gp, vetoCands):
                 continue
             #if abs(gp.pdgId)==22 and self.vetoCandidate(gp, vetoGens): continue # veto photons close to gen lepton
 
