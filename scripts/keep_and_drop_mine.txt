@@ -13,3 +13,6 @@ keep fixedGridRhoFastjetCentralCalo
 keep PV_npvs
 keep PV_npvsGood
 keep *MET_*
+keep run
+keep event
+keep luminosityBlock
