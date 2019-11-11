@@ -40,6 +40,11 @@ class recoilProducer(Module):
         self.out.branch("phi_Z",         "F");
 
         self.out.branch("hasGoodMuon",   "I");
+        # vector sum of the 'Good' muons
+        self.out.branch("pT_muons",      "F");
+        self.out.branch("eta_muons",     "F");
+        self.out.branch("phi_muons",     "F");
+        self.out.branch("mass_muons",    "F");
 
         for u in self.recoils + self.genrecoils:
             self.out.branch("u_%s_pt"  %u,    "F");
@@ -143,6 +148,15 @@ class recoilProducer(Module):
             self.out.fillBranch( "u_%s_phi" %uname,    ulorenz.Phi() )
             self.out.fillBranch( "u_%s_mass"%uname,    ulorenz.M()   )
 
+        # calculate the vector sum of the 'Good' muons
+        vmus = ROOT.TLorentzVector()
+        for mu in vetoCands: 
+            vmus += mu.p4()
+        self.out.fillBranch("pT_muons",   vmus.Pt()  )
+        self.out.fillBranch("eta_muons",  vmus.Eta() )
+        self.out.fillBranch("phi_muons",  vmus.Phi() )
+        self.out.fillBranch("mass_muons", vmus.M()   )
+
         # calculate the Gen recoils
         vetoGens = []
         #for gp in packedGenParts:
@@ -164,7 +178,7 @@ class recoilProducer(Module):
             #    continue
 
             # veto Gen leptons that are close to the high pT reco leptons
-            if abs(gp.pdgId) in [11, 13] and self.vetoCandidate(gp, vetoCands):
+            if abs(gp.pdgId) ==13 and self.vetoCandidate(gp, vetoCands):
                 continue
             #if abs(gp.pdgId)==22 and self.vetoCandidate(gp, vetoGens): continue # veto photons close to gen lepton
 
