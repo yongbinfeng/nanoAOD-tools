@@ -24,7 +24,6 @@ class isDataProducer(Module):
             isData = True
         else:
             isData = False
-        print event.run, "isData", isData
         self.out.fillBranch("isData",isData )
         return True
 

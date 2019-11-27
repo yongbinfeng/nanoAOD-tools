@@ -89,23 +89,7 @@ class recoilProducer(Module):
         """process event, return True (go to next module) or False (fail, go to next event)"""
 
         muons = Collection(event, "Muon")
-        genParts = Collection(event, "GenPart")        
         pfCands  = Collection(event, "PF")
-        packedGenParts = Collection(event, "packedGenPart") # gen particles from packedGenParticles (status==1)
-
-        # get the Gen W
-        foundGenW, pT_W, eta_W, phi_W = self.getGenV( genParts, pdgId=24)
-        self.out.fillBranch("foundGenW", foundGenW )
-        self.out.fillBranch("pT_W",      pT_W      )
-        self.out.fillBranch("eta_W",     eta_W     )
-        self.out.fillBranch("phi_W",     phi_W     )
-
-        # get the Gen W
-        foundGenZ, pT_Z, eta_Z, phi_Z = self.getGenV( genParts, pdgId=23)
-        self.out.fillBranch("foundGenZ", foundGenZ )
-        self.out.fillBranch("pT_Z",      pT_Z      )
-        self.out.fillBranch("eta_Z",     eta_Z     )
-        self.out.fillBranch("phi_Z",     phi_Z     )
 
         # check if the event has good muon(s)
         vetoCands = []
@@ -156,6 +140,28 @@ class recoilProducer(Module):
         self.out.fillBranch("eta_muons",  vmus.Eta() )
         self.out.fillBranch("phi_muons",  vmus.Phi() )
         self.out.fillBranch("mass_muons", vmus.M()   )
+
+        if event.isData:
+            return True
+
+        """ Start calculation with Gen info"""
+
+        genParts = Collection(event, "GenPart")
+        packedGenParts = Collection(event, "packedGenPart") # gen particles from packedGenParticles (status==1)
+
+        # get the Gen W
+        foundGenW, pT_W, eta_W, phi_W = self.getGenV( genParts, pdgId=24)
+        self.out.fillBranch("foundGenW", foundGenW )
+        self.out.fillBranch("pT_W",      pT_W      )
+        self.out.fillBranch("eta_W",     eta_W     )
+        self.out.fillBranch("phi_W",     phi_W     )
+
+        # get the Gen W
+        foundGenZ, pT_Z, eta_Z, phi_Z = self.getGenV( genParts, pdgId=23)
+        self.out.fillBranch("foundGenZ", foundGenZ )
+        self.out.fillBranch("pT_Z",      pT_Z      )
+        self.out.fillBranch("eta_Z",     eta_Z     )
+        self.out.fillBranch("phi_Z",     phi_Z     )
 
         # calculate the Gen recoils
         vetoGens = []
