@@ -12,16 +12,17 @@ def prepare_condor_jobs(arglist):
 
     for ifile in os.listdir(inputdir):
         #res = re.match("myNanoProdMc2016_NANO_(7\d+).root", ifile)
-        res = re.match("myNanoProdMc2016_NANO_([5-9]\d+).root", ifile)
+        #res = re.match("myNanoProdMc2016_NANO_([5-6]\d+).root", ifile)
+        res = re.match("myNanoProd(Mc|Data)2016_NANO_(\d+).root", ifile)
         if res is None:
            continue
         fname = inputdir + "/" + ifile
-        short = res.group(1)
-        if int(short)>=70:
+        short = res.group(2)
+        if int(short)>21:
             continue
 
         # prepare the log directory
-        logdir = os.environ['PWD']+'/'+ "logs_v8"
+        logdir = os.environ['PWD']+'/'+ "logs"
         logdir = logdir.rstrip("/")
         if not os.path.exists(logdir):
             os.system("mkdir -p "+logdir)
@@ -44,7 +45,6 @@ def prepare_condor_jobs(arglist):
         # write the submission script
         job_desc = """Universe = vanilla
 Executable = {condor_exec}
-use_x509userproxy = $ENV(X509_USER_PROXY)
 Log        = {pid}.log
 Output     = {pid}.out
 Error      = {pid}.error
@@ -84,7 +84,7 @@ def main():
     parser.add_option("--justcount",   dest="justcount", default=False, action="store_true",  help="Just report the number of selected events") 
     parser.add_option("-I", "--import", dest="imports",  type="string", default=[], action="append", nargs=2, help="Import modules (python package, comma-separated list of ");
     parser.add_option("-z", "--compression",  dest="compression", type="string", default=("LZMA:9"), help="Compression: none, or (algo):(level) ")
-    parser.add_option("--condor",   dest="condor", action="store_true", default=False, help="To run the jobs on condor. One file per job");
+    parser.add_option("--condor",   dest="condor", action="store_true", default=False, help="To run the jobs on condor. One file per job")
 
     arglist = sys.argv
     print arglist
@@ -106,10 +106,13 @@ def main():
 
     modules = []
     defaults_to_import =[ 
+                            ('PhysicsTools.NanoAODTools.postprocessing.examples.isDataProducer', 'isDataModuleConstr'),
+                            ('PhysicsTools.NanoAODTools.postprocessing.examples.genFriendProducer', 'genQEDJets'),
                             ('PhysicsTools.NanoAODTools.postprocessing.examples.recoilModule', 'recoilModuleConstr'),
+                            #('PhysicsTools.NanoAODTools.postprocessing.examples.PUWeightProducer', 'PUWeightModuleConstr'),
                             #('PhysicsTools.NanoAODTools.postprocessing.examples.genPFMatchingModule', 'genPFMatchingModuleConstr'),
-                            ('PhysicsTools.NanoAODTools.postprocessing.examples.pfGenMatchingModule', 'pfGenMatchingModuleConstr'),
-                            ('PhysicsTools.NanoAODTools.postprocessing.examples.neuToNVPModule', 'neuToNVPModuleConstr'),
+                            #('PhysicsTools.NanoAODTools.postprocessing.examples.pfGenMatchingModule', 'pfGenMatchingModuleConstr'),
+                            #('PhysicsTools.NanoAODTools.postprocessing.examples.neuToNVPModule', 'neuToNVPModuleConstr'),
                         ]
     for mod, names in options.imports + defaults_to_import: 
         import_module(mod)
