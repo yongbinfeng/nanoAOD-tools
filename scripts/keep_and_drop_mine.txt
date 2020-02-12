@@ -3,6 +3,8 @@
 drop *
 keep Muon*
 keep nMuon
+keep Photon*
+keep nPhoton
 keep Jet*
 keep nJet
 keep Gen*
@@ -16,3 +18,4 @@ keep *MET_*
 keep run
 keep event
 keep luminosityBlock
+keep Pileup_nTrueInt
