@@ -19,3 +19,9 @@ keep run
 keep event
 keep luminosityBlock
 keep Pileup_nTrueInt
+#keep isData
+#keep u*
+#keep *muons*
+#keep *_W
+#keep *_Z
+#keep hasGoodMuon

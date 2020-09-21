@@ -13,16 +13,16 @@ def prepare_condor_jobs(arglist):
     for ifile in os.listdir(inputdir):
         #res = re.match("myNanoProdMc2016_NANO_(7\d+).root", ifile)
         #res = re.match("myNanoProdMc2016_NANO_([5-6]\d+).root", ifile)
-        res = re.match("myNanoProd(Mc|Data)2016_NANO_(\d+).root", ifile)
+        res = re.match("myNanoProd(Mc|Data)2017_NANO_(\d+).root", ifile)
         if res is None:
            continue
         fname = inputdir + "/" + ifile
         short = res.group(2)
-        if int(short)>21:
-            continue
+        #if int(short)>30:
+        #    continue
 
         # prepare the log directory
-        logdir = os.environ['PWD']+'/'+ "logs"
+        logdir = os.environ['PWD']+'/'+ "logs_DYJets17"
         logdir = logdir.rstrip("/")
         if not os.path.exists(logdir):
             os.system("mkdir -p "+logdir)
@@ -107,7 +107,7 @@ def main():
     modules = []
     defaults_to_import =[ 
                             ('PhysicsTools.NanoAODTools.postprocessing.examples.isDataProducer', 'isDataModuleConstr'),
-                            ('PhysicsTools.NanoAODTools.postprocessing.examples.genFriendProducer', 'genQEDJets'),
+                            #('PhysicsTools.NanoAODTools.postprocessing.examples.genFriendProducer', 'genQEDJets'),
                             ('PhysicsTools.NanoAODTools.postprocessing.examples.recoilModule', 'recoilModuleConstr'),
                             #('PhysicsTools.NanoAODTools.postprocessing.examples.PUWeightProducer', 'PUWeightModuleConstr'),
                             #('PhysicsTools.NanoAODTools.postprocessing.examples.genPFMatchingModule', 'genPFMatchingModuleConstr'),
