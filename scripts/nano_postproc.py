@@ -42,6 +42,10 @@ if __name__ == "__main__":
     parser.add_option("-z", "--compression", dest="compression", type="string",
                       default=("LZMA:9"), help="Compression: none, or (algo):(level) ")
 
+    # this needs to be checked when running together with multiple trees
+    parser.add_option("--nprocesses", dest="nprocesses", type=int, default=1,
+                      help="Number of processes used to process input tree")
+
     (options, args) = parser.parse_args()
 
     if options.friend:
@@ -56,7 +60,12 @@ if __name__ == "__main__":
     args = args[1:]
 
     modules = []
-    for mod, names in options.imports:
+    print('import module')
+    defaults_to_import =[ 
+                            ('PhysicsTools.NanoAODTools.postprocessing.modules.common.muonScaleResProducer', 'muonScaleRes'),
+                            ('PhysicsTools.NanoAODTools.postprocessing.examples.applySFModule', 'applySFModuleConstr'),
+                        ]
+    for mod, names in options.imports + defaults_to_import:
         import_module(mod)
         obj = sys.modules[mod]
         selnames = names.split(",")
@@ -69,6 +78,7 @@ if __name__ == "__main__":
                         modules.append(mod())
                 else:
                     modules.append(getattr(obj, name)())
+    print("done")
     if options.noOut:
         if len(modules) == 0:
             raise RuntimeError(
@@ -76,19 +86,72 @@ if __name__ == "__main__":
     if options.branchsel != None:
         options.branchsel_in = options.branchsel
         options.branchsel_out = options.branchsel
-    p = PostProcessor(outdir, args,
-                      cut=options.cut,
-                      branchsel=options.branchsel_in,
-                      modules=modules,
-                      compression=options.compression,
-                      friend=options.friend,
-                      postfix=options.postfix,
-                      jsonInput=options.json,
-                      noOut=options.noOut,
-                      justcount=options.justcount,
-                      prefetch=options.prefetch,
-                      longTermCache=options.longTermCache,
-                      maxEntries=options.maxEntries,
-                      firstEntry=options.firstEntry,
-                      outputbranchsel=options.branchsel_out)
-    p.run()
+
+    if options.nprocesses == 1:
+        p = PostProcessor(outdir, args,
+                          cut=options.cut,
+                          branchsel=options.branchsel_in,
+                          modules=modules,
+                          compression=options.compression,
+                          friend=options.friend,
+                          postfix=options.postfix,
+                          jsonInput=options.json,
+                          noOut=options.noOut,
+                          prefetch=options.prefetch,
+                          longTermCache=options.longTermCache,
+                          outputbranchsel=options.branchsel_out)
+        p.run(options.maxEntries, options.firstEntry, options.justcount)
+    else:
+        print "*** running together with multiprocesses... ***"
+        ## deal with multiprocessing
+        #p = PostProcessor(outdir, args,
+        #                  cut=options.cut,
+        #                  branchsel=options.branchsel_in,
+        #                  modules=modules,
+        #                  compression=options.compression,
+        #                  friend=options.friend,
+        #                  postfix=options.postfix,
+        #                  jsonInput=options.json,
+        #                  noOut=options.noOut,
+        #                  prefetch=options.prefetch,
+        #                  longTermCache=options.longTermCache,
+        #                  outputbranchsel=options.branchsel_out)
+        #p.runmultiprocessing(options.maxEntries, options.firstEntry, options.nprocesses)
+
+        def runprocess(maxEntries, firstEntry, justcount, postfix):
+            p = PostProcessor(outdir, args,
+                              cut=options.cut,
+                              branchsel=options.branchsel_in,
+                              modules=modules,
+                              compression=options.compression,
+                              friend=options.friend,
+                              postfix=options.postfix,
+                              jsonInput=options.json,
+                              noOut=options.noOut,
+                              prefetch=options.prefetch,
+                              longTermCache=options.longTermCache,
+                              outputbranchsel=options.branchsel_out)
+            ntot = p.run(maxEntries, firstEntry, justcount, postfix)
+            return ntot
+
+        def runprocess_wrapper(args):
+            return runprocess(*args)
+
+        ntot = runprocess(options.maxEntries, options.firstEntry, True, None)
+
+        # get the total number of events by justcount
+        #ntot = p.run(options.maxEntries, options.firstEntry, True)
+        print("total number of events: {}, splitted by {} processes".format(ntot, options.nprocesses))
+        #
+        ntot = min(options.maxEntries, ntot) if options.maxEntries!= None else ntot
+        nevents_per_proc = ntot / options.nprocesses
+        from multiprocessing import Pool
+        pool = Pool(options.nprocesses)
+
+        arguments = [(nevents_per_proc, options.firstEntry + nevents_per_proc*iproc, False, "_%d"%iproc) for iproc in xrange(options.nprocesses-1) ]
+        n_procesed = nevents_per_proc* (options.nprocesses-1)
+        arguments.append((options.maxEntries - n_procesed, options.firstEntry + n_procesed, False, "_%d"%(options.nprocesses-1)))
+        print("arguments", arguments)
+        results = pool.map(runprocess_wrapper,arguments)
+        print(results)
+

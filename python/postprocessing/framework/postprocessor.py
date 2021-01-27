@@ -17,9 +17,9 @@ class PostProcessor:
     def __init__(
             self, outputDir, inputFiles, cut=None, branchsel=None, modules=[],
             compression="LZMA:9", friend=False, postfix=None, jsonInput=None,
-            noOut=False, justcount=False, provenance=False, haddFileName=None,
+            noOut=False, provenance=False, haddFileName=None,
             fwkJobReport=False, histFileName=None, histDirName=None,
-            outputbranchsel=None, maxEntries=None, firstEntry=0, prefetch=False,
+            outputbranchsel=None, prefetch=False,
             longTermCache=False
     ):
         self.outputDir = outputDir
@@ -31,7 +31,6 @@ class PostProcessor:
         self.json = jsonInput
         self.noOut = noOut
         self.friend = friend
-        self.justcount = justcount
         self.provenance = provenance
         self.jobReport = JobReport() if fwkJobReport else None
         self.haddFileName = haddFileName
@@ -52,9 +51,6 @@ class PostProcessor:
 
         self.histFileName = histFileName
         self.histDirName = histDirName
-        # 2^63 - 1, largest int64
-        self.maxEntries = maxEntries if maxEntries else 9223372036854775807
-        self.firstEntry = firstEntry
         self.prefetch = prefetch  # prefetch files to TMPDIR using xrdcp
         # keep cached files across runs (it's then up to you to clean up the temp)
         self.longTermCache = longTermCache
@@ -95,9 +91,13 @@ class PostProcessor:
                     pass
             return fname, False
 
-    def run(self):
+    def run(self, maxEntries=None, firstEntry=0, justcount=False, postfix=None):
+        # 2^63 - 1, largest int64
+        maxEntries = maxEntries if maxEntries else 9223372036854775807
         outpostfix = self.postfix if self.postfix is not None else (
             "_Friend" if self.friend else "_Skim")
+        if postfix:
+            outpostfix += postfix
         if not self.noOut:
 
             if self.compression != "none":
@@ -115,7 +115,7 @@ class PostProcessor:
             else:
                 compressionLevel = 0
             print("Will write selected trees to " + self.outputDir)
-            if not self.justcount:
+            if not justcount:
                 if not os.path.exists(self.outputDir):
                     os.system("mkdir -p " + self.outputDir)
         else:
@@ -164,12 +164,12 @@ class PostProcessor:
             if inTree is None:
                 inTree = inFile.Get("Friends")
             nEntries = min(inTree.GetEntries() -
-                           self.firstEntry, self.maxEntries)
+                           firstEntry, maxEntries)
             totEntriesRead += nEntries
             # pre-skimming
             elist, jsonFilter = preSkim(
-                inTree, self.json, self.cut, maxEntries=self.maxEntries, firstEntry=self.firstEntry)
-            if self.justcount:
+                inTree, self.json, self.cut, maxEntries=maxEntries, firstEntry=firstEntry)
+            if justcount:
                 print('Would select %d / %d entries from %s (%.2f%%)' % (elist.GetN() if elist else nEntries, nEntries, fname, (elist.GetN() if elist else nEntries) / (0.01 * nEntries) if nEntries else 0))
                 if self.prefetch:
                     if toBeDeleted:
@@ -215,8 +215,8 @@ class PostProcessor:
                         branchSelection=self.branchsel,
                         outputbranchSelection=self.outputbranchsel,
                         fullClone=fullClone,
-                        maxEntries=self.maxEntries,
-                        firstEntry=self.firstEntry,
+                        maxEntries=maxEntries,
+                        firstEntry=firstEntry,
                         jsonFilter=jsonFilter,
                         provenance=self.provenance)
             else:
@@ -227,11 +227,11 @@ class PostProcessor:
 
             # process events, if needed
             if not fullClone:
-                eventRange = range(self.firstEntry, self.firstEntry +
+                eventRange = range(firstEntry, firstEntry +
                                     nEntries) if nEntries > 0 and not elist else None
                 (nall, npass, timeLoop) = eventLoop(
                     self.modules, inFile, outFile, inTree, outTree,
-                    eventRange=eventRange, maxEvents=self.maxEntries
+                    eventRange=eventRange, maxEvents=maxEntries
                 )
                 print('Processed %d preselected entries from %s (%s entries). Finally selected %d entries' % (nall, fname, nEntries, npass))
             else:
@@ -244,8 +244,10 @@ class PostProcessor:
                 outFile.Close()
                 print("Done %s" % outFileName)
             if self.jobReport:
+                print("jobReport")
                 self.jobReport.addInputFile(fname, nall)
             if self.prefetch:
+                print("prefetch")
                 if toBeDeleted:
                     os.unlink(ftoread)
 
@@ -262,3 +264,24 @@ class PostProcessor:
         if self.jobReport:
             self.jobReport.addOutputFile(self.haddFileName)
             self.jobReport.save()
+
+        return totEntriesRead
+
+    def run_wrapper(self, args):
+        return self.run(*args)
+
+    def __call__(self, args):
+        return self.run_wrapper(args)
+
+    def runmultiprocessing(self, maxEntries, firstEntry, nprocesses):
+        ntot = self.run(maxEntries, firstEntry, True)
+        print("total number of events: {}, splitted by {} processes".format(ntot, nprocesses))
+
+        ntot = min(maxEntries, ntot) if maxEntries!= None else ntot
+        nevents_per_proc = ntot / (nprocesses - 1)
+        from multiprocessing import Pool
+        pool = Pool(nprocesses)
+        arguments = [(nevents_per_proc, firstEntry + nevents_per_proc*iproc, False, "_%d"%iproc) for iproc in xrange(nprocesses) ]
+        results = pool.map(self,arguments)
+        print(results)
+

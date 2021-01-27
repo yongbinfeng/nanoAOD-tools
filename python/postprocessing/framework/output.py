@@ -172,8 +172,10 @@ class FullOutput(OutputTree):
     def write(self):
         if self.outputbranchSelection:
             self.outputbranchSelection.selectBranches(self._tree)
+        #self._tree = self.tree().CopyTree('1', "",
+        #                                  self.maxEntries if self.maxEntries else ROOT.TVirtualTreePlayer.kMaxEntries, self.firstEntry)
         self._tree = self.tree().CopyTree('1', "",
-                                          self.maxEntries if self.maxEntries else ROOT.TVirtualTreePlayer.kMaxEntries, self.firstEntry)
+                                          self.maxEntries if self.maxEntries else ROOT.TVirtualTreePlayer.kMaxEntries, 0)
 
         OutputTree.write(self)
         for t in self._otherTrees.values():
