@@ -150,7 +150,7 @@ if __name__ == "__main__":
 
         arguments = [(nevents_per_proc, options.firstEntry + nevents_per_proc*iproc, False, "_%d"%iproc) for iproc in xrange(options.nprocesses-1) ]
         n_procesed = nevents_per_proc* (options.nprocesses-1)
-        arguments.append((options.maxEntries - n_procesed, options.firstEntry + n_procesed, False, "_%d"%(options.nprocesses-1)))
+        arguments.append((ntot - n_procesed, options.firstEntry + n_procesed, False, "_%d"%(options.nprocesses-1)))
         print("arguments", arguments)
         results = pool.map(runprocess_wrapper,arguments)
         print(results)
