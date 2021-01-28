@@ -41,6 +41,7 @@ class muonScaleResProducer(Module):
     def beginFile(self, inputFile, outputFile, inputTree, wrappedOutputTree):
         self.out = wrappedOutputTree
         self.out.branch("isData", "O")
+        self.out.branch("isMuChannel", "O")
         self.out.branch("lep1_corrected_pt",     "F")
         self.out.branch("lep1_correctedUp_pt",   "F")
         self.out.branch("lep1_correctedDown_pt", "F")
@@ -54,6 +55,22 @@ class muonScaleResProducer(Module):
     def analyze(self, event):
         isData = (event.runNum != 1)
 
+        # check if the lepton is muon by checking the lepton mass
+        isMuon = (abs(event.eval('lep1.M()') - 0.1056583) < 0.01)
+        if not isMuon:
+            self.out.fillBranch("isData", isData)
+            self.out.fillBranch("isMuChannel", isMuon)
+            lep1_pt = event.eval('lep1.Pt()')
+            lep2_pt = event.eval('lep2.Pt()')
+            self.out.fillBranch("lep1_corrected_pt",     lep1_pt)
+            self.out.fillBranch("lep2_corrected_pt",     lep2_pt)
+            self.out.fillBranch("lep1_correctedUp_pt",   lep1_pt)
+            self.out.fillBranch("lep1_correctedDown_pt", lep1_pt)
+            self.out.fillBranch("lep2_correctedUp_pt",   lep2_pt)
+            self.out.fillBranch("lep2_correctedDown_pt", lep2_pt)
+
+            return True
+            
         mu1 = Object(event, "mu1")
         mu1.pt  = event.eval('lep1.Pt()')
         mu1.eta = event.eval('lep1.Eta()')
@@ -100,6 +117,7 @@ class muonScaleResProducer(Module):
                                 mk_safe(roccor.kScaleDTerror, mu.charge, mu.pt, mu.eta, mu.phi) )
 
         self.out.fillBranch("isData", isData)
+        self.out.fillBranch("isMuChannel", isMuon)
         self.out.fillBranch("lep1_corrected_pt", pt_corr[0])
         self.out.fillBranch("lep2_corrected_pt", pt_corr[1])
         self.out.fillBranch("lep1_correctedUp_pt",   pt_corr[0] + pt_err[0])

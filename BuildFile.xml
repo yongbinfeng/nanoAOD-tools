@@ -1,5 +1,6 @@
 <use name="roottmva"/>
 <use name="hepmc"/>
+<use name="roofitcore"/>
 <use name="CondFormats/JetMETObjects"/>
 <use name="JetMETCorrections/Modules"/>
 <export>
