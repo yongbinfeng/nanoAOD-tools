@@ -64,6 +64,7 @@ if __name__ == "__main__":
     defaults_to_import =[ 
                             ('PhysicsTools.NanoAODTools.postprocessing.modules.common.muonScaleResProducer', 'muonScaleRes'),
                             ('PhysicsTools.NanoAODTools.postprocessing.examples.applySFModule', 'applySFModuleConstr'),
+                            ('PhysicsTools.NanoAODTools.postprocessing.examples.recoilCorrectionModule', 'recoilCorrectionModuleConstr'),
                         ]
     for mod, names in options.imports + defaults_to_import:
         import_module(mod)

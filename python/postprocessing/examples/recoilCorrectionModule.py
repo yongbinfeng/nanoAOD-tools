@@ -14,59 +14,74 @@ class recoilCorrectionProducer(Module):
                 % os.environ['CMSSW_BASE'])
 
     def beginJob(self):
-        self.effs = ROOT.AppEffSF('/afs/cern.ch/work/a/arapyan/public/lowpu_data/Efficiency/lowpu_13TeV/results/Zmm/')
-
-        self.effs.loadHLT("MuHLTEff_aMCxPythia","Positive","Negative");
-        self.effs.loadSel("MuSITEff_aMCxPythia","Combined","Combined");
-        self.effs.loadSta("MuStaEff_aMCxPythia","Combined","Combined");
-
-        self.effs.loadUncSel("/afs/cern.ch/work/a/arapyan/public/lowpu_data/Efficiency/lowpu_13TeV/Systematics/SysUnc_MuSITEff.root");
-        self.effs.loadUncSta("/afs/cern.ch/work/a/arapyan/public/lowpu_data/Efficiency/lowpu_13TeV/Systematics/SysUnc_MuStaEff.root");
+        self.rcMain = ROOT.RecoilCorrector("", "")
+        self.rcMain.loadRooWorkspacesMCtoCorrect("/afs/cern.ch/work/a/arapyan/public/lowpu_data/Recoil/ZmmMC_PF_13TeV_2G/")
+        self.rcMain.loadRooWorkspacesData("/afs/cern.ch/work/a/arapyan/public/lowpu_data/Recoil/ZmmData_PF_13TeV_2G_bkg_fixRoch/")
+        self.rcMain.loadRooWorkspacesMC("/afs/cern.ch/work/a/arapyan/public/lowpu_data/Recoil/ZmmMC_PF_13TeV_2G/")
 
     def endJob(self):
         pass
 
     def beginFile(self, inputFile, outputFile, inputTree, wrappedOutputTree):
         self.out = wrappedOutputTree
-        self.out.branch("lepsfweight", "F")
-        self.out.branch("lepsfweight_hlt", "F")
-        self.out.branch("lepsfweight_fsr", "F")
-        self.out.branch("lepsfweight_mc",  "F")
-        self.out.branch("lepsfweight_tag", "F")
+        self.out.branch("met_raw_pt",  "F")
+        self.out.branch("met_raw_phi", "F")
+
+        self.out.branch("met_wlepcorr_pt",  "F")
+        self.out.branch("met_wlepcorr_phi", "F")
+
+        self.out.branch("met_corrected_pt", "F")
+        self.out.branch("met_corrected_phi","F")
 
     def endFile(self, inputFile, outputFile, inputTree, wrappedOutputTree):
         pass
 
     def analyze(self, event):
         """process event, return True (go to next module) or False (fail, go to next event)"""
-        wmain = 1.0
-        w_hlt = 1.0
-        wfsr = 1.0
-        wmc = 1.0
-        wbkg = 1.0
-        wtag = 1.0
+
+        lep1_pt = event.lep1_corrected_pt
+        lep1_phi = event.eval('lep1.Phi()')
+        lep2_pt = event.lep2_corrected_pt
+        lep2_phi = event.eval('lep2.Phi()')
+        if event.isMuChannel:
+            lep1_rawpt = event.eval('lep1.Pt()')
+            lep1_rawphi = lep1_phi
+            lep2_rawpt = event.eval('lep2.Pt()')
+            lep2_rawphi = lep2_phi
+        else:
+            lep1_rawpt = event.eval('lep1_raw.Pt()')
+            lep1_rawphi = event.eval('lep1_raw.Phi()')
+            lep2_rawpt = event.eval('lep2_raw.Pt()')
+            lep2_rawphi = event.eval('lep2_raw.Phi()')
+
+        vmet_wlepcorr = self.rcMain.CorrectfromLepPt( event.met, event.metPhi, lep1_pt, lep1_phi, lep1_rawpt, lep1_rawphi, lep2_pt, lep2_phi, lep2_rawpt, lep2_rawphi )
+
+        # met with lepton pt corrections
+        met_wlepcorr = vmet_wlepcorr.Mod()
+        metPhi_wlepcorr = vmet_wlepcorr.Phi()
 
         if not event.isData:
-            mu1 = ROOT.TLorentzVector()
-            mu1.SetPtEtaPhiM(event.lep1_corrected_pt, event.eval('lep1.Eta()'), event.eval('lep1.Phi()'), event.eval('lep1.M()'))
-            mu2 = ROOT.TLorentzVector()
-            mu2.SetPtEtaPhiM(event.lep2_corrected_pt, event.eval('lep2.Eta()'), event.eval('lep2.Phi()'), event.eval('lep2.M()'))
-            corr = self.effs.fullEfficiencies(mu1, event.q1, mu2, event.q2)
-            uncs_sta = self.effs.getUncSta(   mu1, event.q1, mu2, event.q2)
-            uncs_sit = self.effs.getUncSel(   mu1, event.q1, mu2, event.q2)
+            # corrected lepton pts
+            vlep1 = ROOT.TVector2()
+            vlep1.SetMagPhi(lep1_pt, lep1_phi)
+            vlep2 = ROOT.TVector2()
+            vlep2.SetMagPhi(lep2_pt, lep2_phi)
+            vV = vlep1 + vlep2
 
-            wmain *= corr
-            w_hlt *= self.effs.computeHLTSF(mu1,event.q1, mu2, event.q2)
-            wfsr *= uncs_sta[0]*uncs_sit[0]*w_hlt
-            wmc  *= uncs_sta[1]*uncs_sit[1]*w_hlt
-            wbkg *= uncs_sta[2]*uncs_sit[2]*w_hlt
-            wtag *= uncs_sta[3]*uncs_sit[3]*w_hlt
+            vmet_recoilcorrected = self.rcMain.CorrectInvCdf(met_wlepcorr, metPhi_wlepcorr, event.genVPt, event.genVPhi, vV.Mod(), vV.Phi(), 0, 0, 0, False, False)
 
-        self.out.fillBranch("lepsfweight", wmain)
-        self.out.fillBranch("lepsfweight_hlt", w_hlt)
-        self.out.fillBranch("lepsfweight_fsr", wfsr)
-        self.out.fillBranch("lepsfweight_mc", wmc)
-        self.out.fillBranch("lepsfweight_tag", wtag)
+        else:
+            vmet_recoilcorrected = vmet_wlepcorr
+
+        self.out.fillBranch("met_raw_pt",  event.met)
+        self.out.fillBranch("met_raw_phi", event.metPhi)
+
+        self.out.fillBranch("met_wlepcorr_pt",  met_wlepcorr)
+        self.out.fillBranch("met_wlepcorr_phi", ROOT.TVector2.Phi_mpi_pi(metPhi_wlepcorr))
+
+        self.out.fillBranch("met_corrected_pt", vmet_recoilcorrected.Mod())
+        self.out.fillBranch("met_corrected_phi", ROOT.TVector2.Phi_mpi_pi(vmet_recoilcorrected.Phi()))
+
         return True
 
 
